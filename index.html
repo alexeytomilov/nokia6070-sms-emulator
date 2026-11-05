@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Nokia 6070 SMS Emulator</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#202225;color:#ccc;font:13px system-ui,sans-serif;height:100vh;
+    display:grid;grid-template-columns:230px 1fr 230px 300px;grid-template-rows:1fr auto;gap:16px;padding:16px}
+  .panel{display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+  #bodyPanel{grid-column:1;grid-row:1}
+  #bgPanel{grid-column:3;grid-row:1}
+  #center{grid-column:2;grid-row:1;min-height:0;display:flex;align-items:center;justify-content:center}
+  #frame{aspect-ratio:16/9;width:min(100%, calc((100vh - 290px) * 16 / 9));background:#000;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;perspective:900px;cursor:grab;position:relative}
+  #frame.drag{cursor:grabbing}
+  #frame{background:radial-gradient(ellipse 60% 70% at 25% 35%, var(--bg1), transparent 70%),
+    radial-gradient(ellipse 70% 80% at 80% 70%, var(--bg2), transparent 75%), var(--bg3)}
+  #frame::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:var(--vignette);
+    background:radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.85))}
+  #bgImg{position:absolute;inset:-12%;background:center/cover no-repeat;pointer-events:none}
+  #phone{position:relative;flex:none;transform-style:preserve-3d}
+  #view{image-rendering:pixelated;display:block}
+  .corner{position:absolute;width:0;height:0;pointer-events:none}
+  #bottom{grid-column:1/4;grid-row:2;display:flex;gap:16px;align-items:flex-start}
+  #bottom>.col{display:flex;flex-direction:column;gap:8px;flex:1;min-width:0}
+  #side{grid-column:4;grid-row:1/3;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+  label{display:flex;flex-direction:column;gap:4px}
+  input,textarea,select,button{font:inherit;background:#2c2f33;color:#eee;border:1px solid #444;border-radius:4px;padding:6px}
+  textarea{height:62px;resize:vertical}
+  button{cursor:pointer}
+  button.main{background:#2a8a6e;border-color:#2a8a6e;color:#fff;font-weight:600}
+  .row{display:flex;gap:6px}
+  .row>*{flex:1;min-width:0}
+  .theme select{background:#2a8a6e;border-color:#2a8a6e;color:#fff;font-weight:600}
+  #colors label.picked{outline:2px solid #ffd54a;outline-offset:2px;border-radius:3px;color:#ffd54a}
+  .cams{display:flex;flex-wrap:wrap;gap:6px}
+  .cams span{display:flex}
+  .cams button{padding:4px 8px}
+  .cams button.on{background:#2a8a6e;border-color:#2a8a6e;color:#fff}
+  .cams button.x{border-left:none;border-radius:0 4px 4px 0;color:#aaa}
+  .cams button:first-child{border-radius:4px 0 0 4px}
+  .hint{color:#888;font-size:12px;line-height:1.5}
+  fieldset{border:1px solid #444;border-radius:4px;display:flex;flex-direction:column;gap:6px;padding:8px 10px;margin:0}
+  legend{color:#eee;padding:0 4px}
+  fieldset label span{display:flex;gap:8px;align-items:center}
+  fieldset input[type=range]{flex:1;padding:0}
+  fieldset output{width:34px;text-align:right;color:#aaa}
+</style>
+</head>
+<body>
+<div id="bodyPanel" class="panel">
+  <fieldset>
+    <legend>Корпус телефона</legend>
+    <label style="flex-direction:row;align-items:center"><input type="checkbox" id="showBody" checked> Показывать корпус</label>
+    <label>Корпус
+      <select id="bodyKind"><option value="dark">Тёмный (фото настоящего 6070)</option><option value="silverA">Серебристый 1 (сгенерирован)</option><option value="silverB">Серебристый 2 (сгенерирован)</option></select>
+    </label>
+    <label>Яркость<span><input type="range" id="bodyBright" min="0" max="2" step="0.01" value="1"><output></output></span></label>
+    <label>Гамма<span><input type="range" id="bodyGamma" min="0.3" max="3" step="0.01" value="1"><output></output></span></label>
+    <label>Насыщенность<span><input type="range" id="bodySat" min="0" max="2" step="0.01" value="1"><output></output></span></label>
+    <button id="bodyReset">Сбросить корпус</button>
+  </fieldset>
+  <fieldset id="colors">
+    <legend>Цвета</legend>
+    <div class="hint">Бирюзовая тема экрана:</div>
+    <div class="row"><label>Статус<input type="color" data-c="teal.status"></label><label>Заголовок<input type="color" data-c="teal.title"></label></div>
+    <div class="row"><label>Фон экрана<input type="color" data-c="teal.body"></label><label>Нижняя полоса<input type="color" data-c="teal.soft"></label></div>
+    <div class="row"><label>Текст на полосах<input type="color" data-c="teal.softInk"></label><label>Часы<input type="color" data-c="teal.clock"></label></div>
+    <div class="row"><label>Выделение<input type="color" data-c="teal.sel"></label><label>Линии списка<input type="color" data-c="teal.line"></label></div>
+    <div class="row"><label>Главный: верх<input type="color" data-c="teal.idleTop"></label><label>Главный: низ<input type="color" data-c="teal.idleBottom"></label></div>
+    <div class="hint">Игра:</div>
+    <div class="row"><label>Корт<input type="color" data-c="game.court"></label><label>Линии корта<input type="color" data-c="game.line"></label></div>
+    <div class="row"><label>Игроки, рубль<input type="color" data-c="game.dark"></label><label>Сетка, след<input type="color" data-c="game.mid"></label></div>
+    <div class="hint" id="colorNote" hidden></div>
+    <div class="hint">Кликни по экрану телефона, и нужный цвет выделится здесь. Наведи на цвет, и его место на экране мигнёт.</div>
+    <button id="colorsReset">Сбросить цвета</button>
+  </fieldset>
+</div>
+
+<div id="center"><div id="frame"><div id="bgImg"></div><div id="phone"><canvas id="view"></canvas><i class="corner" style="left:0;top:0"></i><i class="corner" style="right:0;top:0"></i><i class="corner" style="right:0;bottom:0"></i><i class="corner" style="left:0;bottom:0"></i></div></div></div>
+
+<div id="bgPanel" class="panel">
+  <fieldset>
+    <legend>Фон</legend>
+    <label>Картинка фона (HDRI, фото)<input type="file" id="bgFile" accept="image/*"></label>
+    <button id="bgClear">Убрать картинку</button>
+    <label>Размытие<span><input type="range" id="bgBlur" min="0" max="80" step="0.5" value="24"><output></output></span></label>
+    <label>Яркость<span><input type="range" id="bgBright" min="0" max="2" step="0.01" value="1"><output></output></span></label>
+    <label>Масштаб<span><input type="range" id="bgScale" min="1" max="4" step="0.01" value="1"><output></output></span></label>
+    <label>Сдвиг по X<span><input type="range" id="bgX" min="0" max="100" step="1" value="50"><output></output></span></label>
+    <label>Сдвиг по Y<span><input type="range" id="bgY" min="0" max="100" step="1" value="50"><output></output></span></label>
+    <label>Виньетка<span><input type="range" id="vignette" min="0" max="1" step="0.01" value="0.65"><output></output></span></label>
+    <div class="hint">Без картинки фоном служит градиент из трёх цветов.</div>
+    <div class="row">
+      <label>Цвет 1<input type="color" id="bg1" value="#6b5a46"></label>
+      <label>Цвет 2<input type="color" id="bg2" value="#3a3631"></label>
+      <label>Цвет 3<input type="color" id="bg3" value="#141210"></label>
+    </div>
+    <button id="bgReset">Сбросить фон</button>
+  </fieldset>
+  <fieldset>
+    <legend>Отражение в стекле</legend>
+    <label>Отражение фона / HDRI<span><input type="range" id="reflEnv" min="0" max="1" step="0.01" value="0"><output></output></span></label>
+    <label>Размытие отражения<span><input type="range" id="reflBlur" min="0" max="20" step="0.1" value="6"><output></output></span></label>
+    <label>Блик-полоса<span><input type="range" id="reflBand" min="0" max="1" step="0.01" value="0"><output></output></span></label>
+    <label>Ширина полосы<span><input type="range" id="reflBandW" min="0.05" max="1" step="0.01" value="0.3"><output></output></span></label>
+    <label>Угол полосы<span><input type="range" id="reflAngle" min="-80" max="80" step="1" value="25"><output></output></span></label>
+    <label>Сдвиг отражения<span><input type="range" id="reflShift" min="-1" max="1" step="0.01" value="0"><output></output></span></label>
+    <label style="flex-direction:row;align-items:center"><input type="checkbox" id="reflFollow" checked> Двигается при повороте телефона</label>
+    <div class="hint">Без картинки фона отражается градиент из цветов фона.</div>
+    <button id="reflReset">Сбросить отражение</button>
+  </fieldset>
+</div>
+
+<div id="bottom">
+  <div class="col">
+    <label class="theme">Тема экрана телефона
+      <select id="theme"><option value="nokia">Nokia (белая, как в 6070)</option><option value="teal">Бирюзовая (как на фото)</option></select>
+    </label>
+    <label>Оператор<input id="op" value=""></label>
+    <div class="row">
+      <label>Время<input id="time" value="12:30"></label>
+      <label>Дата<input id="date" value="15.03.2008"></label>
+    </div>
+    <label>Отправитель<input id="from" value="900"></label>
+  </div>
+  <div class="col">
+    <label>Текст SMS<textarea id="text">Perevod 500r. na nomer 79161234567 vypolnen. Dengi dostavleny.</textarea></label>
+    <button class="main" id="send">Прислать SMS</button>
+  </div>
+  <div class="col">
+    <label>Входящие (строка: отправитель | текст)<textarea id="inbox">900 | Zachislenie 1200r. Balans 3450r.
+Mama | Pozvoni mne vecherom
+Sasha | Ty gde? Zhdu u metro
+Oleg | Zavtra v 10 u vhoda
+Lena | Kupi hleba po doroge
+900 | Spisanie 350r. Balans 2250r.
+Papa | Zabral mashinu iz servisa
+Dima | V subbotu futbol v 11
+Marina | S dnem rozhdeniya!!!
+900 | Zachislenie 5000r. Balans 2600r.
+Sasha | Opazdyvayu na 10 min
+Mama | Ty poel?</textarea></label>
+    <button id="openInbox">Открыть «Входящие»</button>
+    <button class="main" id="addInbox">+ Новое сообщение во «Входящие»</button>
+  </div>
+  <div class="col">
+    <div class="row">
+      <button id="kl">Левая</button>
+      <button id="kc">Центр</button>
+      <button id="kr">Правая</button>
+    </div>
+    <div class="row">
+      <button class="main" id="ku">▲ Вверх</button>
+      <button class="main" id="kd">▼ Вниз</button>
+    </div>
+    <div class="row">
+      <button class="main" id="kL">◄ Влево</button>
+      <button class="main" id="kR">► Вправо</button>
+    </div>
+    <button id="openTennis">Открыть игру «Теннис»</button>
+    <label>Скорость мяча<span class="row" style="align-items:center"><input type="range" id="ballSpeed" min="0.3" max="3" step="0.05" value="1" style="flex:4;padding:0"><output id="ballSpeedOut" style="flex:1;text-align:right;color:#aaa">x1.00</output></span></label>
+    <div class="hint">F1 левая, Enter центр, Esc / F2 правая, ↑↓ прокрутка, S прислать SMS. С главного экрана Enter открывает «Входящие». В теннисе ←→ двигают игрока, Enter пауза, Esc выход.</div>
+  </div>
+</div>
+
+<div id="side">
+  <div class="row">
+    <button class="main" id="saveAll">Сохранить все настройки</button>
+    <button id="loadAll">Загрузить</button>
+  </div>
+  <input type="file" id="loadFile" accept=".json,application/json" hidden>
+  <fieldset>
+    <legend>Экран в кадре</legend>
+    <div class="row">
+      <label>Экран<input value="Nokia 6070 · 128×160" disabled></label>
+      <label>Масштаб
+        <select id="scale"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>8</option></select>
+      </label>
+    </div>
+    <label>Наклон вперёд / назад<span><input type="range" id="rotX" min="-70" max="70" step="0.5" value="0"><output></output></span></label>
+    <label>Поворот влево / вправо<span><input type="range" id="rotY" min="-70" max="70" step="0.5" value="0"><output></output></span></label>
+    <label>Вращение в плоскости<span><input type="range" id="rotZ" min="-180" max="180" step="0.5" value="0"><output></output></span></label>
+    <label>Перспектива (меньше = сильнее)<span><input type="range" id="persp" min="200" max="3000" step="10" value="900"><output></output></span></label>
+    <label>Зум<span><input type="range" id="zoom" min="-3" max="3" step="0.01" value="-1.2"><output></output></span></label>
+    <div class="hint">В кадре: тянуть мышью — повернуть, колесо — зум к курсору, Shift + тянуть или средняя кнопка — сдвинуть.</div>
+    <button id="rotReset">Сбросить положение</button>
+    <button class="main" id="camAdd">+ Запомнить камеру</button>
+    <div id="cams" class="cams"></div>
+  </fieldset>
+  <fieldset id="fx">
+    <legend>Оверлей экрана</legend>
+    <label>Толщина сетки<span><input type="range" id="fxGrid" min="0" max="0.6" step="0.01" value="0"><output></output></span></label>
+    <label>Плотность сетки<span><input type="range" id="fxGridAlpha" min="0" max="1" step="0.01" value="0.6"><output></output></span></label>
+    <label>Размытие сетки<span><input type="range" id="fxGridBlur" min="0" max="1" step="0.01" value="0"><output></output></span></label>
+    <label>Шум яркости пикселей<span><input type="range" id="fxNoise" min="0" max="0.4" step="0.01" value="0"><output></output></span></label>
+    <label>Грязь на стекле<span><input type="range" id="fxDirt" min="0" max="1" step="0.01" value="0"><output></output></span></label>
+    <label>Хроматическая аберрация<span><input type="range" id="fxCA" min="0" max="3" step="0.05" value="0"><output></output></span></label>
+    <label>Расфокус<span><input type="range" id="fxDefocus" min="0" max="6" step="0.05" value="0"><output></output></span></label>
+    <label>Точка фокуса (верх → низ)<span><input type="range" id="fxFocus" min="0" max="1" step="0.01" value="0.5"><output></output></span></label>
+    <label>Зона резкости<span><input type="range" id="fxDof" min="0" max="1" step="0.01" value="0.2"><output></output></span></label>
+    <button id="fxReset">Сбросить оверлей</button>
+  </fieldset>
+</div>
+
+<script src="assets.js"></script>
+<script src="default-settings.js"></script>
+<script src="font.js"></script>
+<script src="tennis.js"></script>
+<script src="vendor/mp4-muxer.js"></script>
+<script>
+// Colours and positions are measured from real Nokia 6070 screenshots (references/screens-6070).
+const W = 128, H = 160;
+const C = {
+  bg: '#ffffff',
+  ink: '#000000',
+  idle: 'rgb(115,117,115)',     // standby text in the Nokia theme
+  track: 'rgb(206,207,206)',
+  thumb: 'rgb(115,154,222)',
+  thumbEdge: 'rgb(115,138,173)',
+  // selection bar and scrollbar, from 6070_Nokia_settings.png
+  barTopLeft: 'rgb(239,239,255)', barLight: 'rgb(189,207,255)', barFill: 'rgb(99,109,181)',
+  barRightTop: 'rgb(140,138,173)', barRight: 'rgb(115,138,173)',
+  barBottom: 'rgb(82,85,140)', barBottomEnd: 'rgb(99,101,140)',
+  sbTrack: 'rgb(115,154,222)', sbTrackEdge: 'rgb(206,207,206)',
+  sbBoxLight: 'rgb(222,223,222)', sbBoxMid: 'rgb(189,186,189)', sbBoxDark: 'rgb(115,138,173)',
+};
+const SOFT_Y = 147, MID_Y = 144;
+
+// Screen themes. 'nokia' is the real 6070 look above (white).
+// 'teal' follows the user's reference photos: teal status bar, dark title and softkey bars
+// with light text, light teal body with dark text; the standby screen is a coloured gradient.
+const THEMES = {
+  nokia: null,
+  teal: {
+    status: 'rgb(72,168,168)', title: 'rgb(18,44,66)', titleInk: '#ffffff',
+    body: 'rgb(178,228,220)', soft: 'rgb(18,44,66)', softInk: '#ffffff', clock: 'rgb(18,44,66)',
+    sel: 'rgb(18,44,66)', selInk: '#ffffff', line: 'rgb(60,120,128)',
+    sbTrack: 'rgb(40,110,120)', sbThumb: 'rgb(220,245,240)',
+    idleTop: [70, 160, 165], idleBottom: [16, 52, 72], idleInk: '#ffffff',
+  },
+};
+const th = () => THEMES[document.getElementById('theme').value];
+
+// Coloured bars behind a menu-type screen (status, optional title bar, body, softkeys).
+function chrome(withTitle) {
+  const t = th();
+  if (!t) return;
+  px(t.body, 0, 0, W, H);
+  px(t.status, 0, 0, W, 13);
+  if (withTitle) px(t.title, 0, 13, W, 14);
+  px(t.soft, 0, 143, W, H - 143);
+}
+
+// The LCD is drawn at native 128x160, then blown up by a whole number of
+// *device* pixels, so every LCD pixel is the same square on any Windows scaling.
+const lcd = document.createElement('canvas');
+lcd.width = W; lcd.height = H;
+const ctx = lcd.getContext('2d');
+const view = document.getElementById('view');
+const vctx = view.getContext('2d');
+const $ = id => document.getElementById(id);
+
+const img = {};
+for (const n of ['battery-bars', 'battery', 'antenna', 'envelope']) {
+  img[n] = new Image();
+  img[n].src = ASSET['assets/' + n + '.png'];
+  img[n].onload = draw;
+}
+const sprite = (n, x, y) => img[n].complete && ctx.drawImage(img[n], x, y);
+
+const S = { mode: 'idle', scroll: 0, msg: null, sel: 0, top: 0, received: [], unread: 0, reveal: 3 };
+
+// Small inbox icons are drawn (no real 6070 inbox screenshot found): '#' black, 'o' white.
+const ICON = {
+  unread: ['#########', '##ooooo##', '#o#ooo#o#', '#oo#o#oo#', '#ooo#ooo#', '#ooooooo#', '#########'],
+  read:   ['...###...', '..#ooo#..', '.#ooooo#.', '#########', '##ooooo##', '#o#ooo#o#', '#oo###oo#', '#########'],
+};
+function icon(rows, x, y) {
+  rows.forEach((r, j) => [...r].forEach((p, i) => {
+    if (p === '.') return;
+    ctx.fillStyle = p === '#' ? C.ink : C.bg;
+    ctx.fillRect(x + i, y + j, 1, 1);
+  }));
+}
+
+// ---- shared parts ----
+// Status strip y 0..12 on every screen: antenna and signal level left,
+// battery level and battery icon right, clock right of centre.
+function statusBars() {
+  sprite('antenna', 1, 1);
+  sprite('battery', 120, 1);
+  if (img['battery-bars'].complete) {        // level bars, top 12 rows only
+    ctx.drawImage(img['battery-bars'], 0, 0, 11, 12, 108, 0, 11, 12);
+    ctx.save(); ctx.translate(20, 0); ctx.scale(-1, 1);
+    ctx.drawImage(img['battery-bars'], 0, 0, 11, 12, 0, 0, 11, 12);
+    ctx.restore();
+  }
+}
+function clock(color) {
+  drawText(ctx, 'clock', $('time').value, 105, 2, color, 'right');
+}
+function softkeys(l, m, r, color = th() ? th().softInk : C.ink) {
+  if (l) drawText(ctx, 'small', l, 1, SOFT_Y, color);
+  if (m) drawText(ctx, 'bold', m, 64, MID_Y, color, 'center');
+  if (r) drawText(ctx, 'small', r, 126, SOFT_Y, color, 'right');
+}
+function title(t, num) {
+  const ink = th() ? th().titleInk : C.ink;
+  drawText(ctx, 'small', t, 12, 14, ink);
+  if (num) drawText(ctx, 'small', String(num), 117, 14, ink, 'right');
+}
+const clockInk = () => th() ? th().clock : C.ink;
+function px(color, x, y, w, h) { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); }
+
+// Selection bar: x 0..121, light top/left edge, dark bottom/right edge.
+function selBar(y, h) {
+  const b = y + h - 1;
+  px(C.barFill, 1, y + 1, 120, h - 2);
+  px(C.barLight, 0, y, 122, 1); px(C.barLight, 0, y, 1, h - 1);
+  px(C.barTopLeft, 0, y, 1, 1);
+  px(C.barRight, 121, y + 1, 1, h - 2); px(C.barRightTop, 121, y + 1, 1, 1);
+  px(C.barBottom, 1, b, 120, 1); px(C.barBottomEnd, 0, b, 1, 1); px(C.barBottomEnd, 121, b, 1, 1);
+}
+
+// Scrollbar: blue track x124..125 + gray edge x126, gray 3x12 box as the thumb.
+function scrollbar(pos, count) {
+  const top = 28, bottom = 142, bh = 12, t = th();
+  if (t) {                                  // flat teal scrollbar
+    px(t.sbTrack, 124, top, 3, bottom - top + 1);
+    px(t.sbThumb, 124, top + Math.round((bottom - top + 1 - bh) * (count > 1 ? pos / (count - 1) : 0)), 3, bh);
+    return;
+  }
+  px(C.sbTrack, 124, top, 2, bottom - top + 1); px(C.sbTrackEdge, 126, top, 1, bottom - top + 1);
+  const y = top + 3 + Math.round((bottom - top - 5 - bh) * (count > 1 ? pos / (count - 1) : 0));
+  px(C.bg, 124, y - 2, 3, bh + 4);
+  px(C.sbBoxLight, 124, y, 3, 1);
+  px(C.sbBoxLight, 124, y + 1, 1, bh - 2); px(C.sbBoxMid, 125, y + 1, 1, bh - 2); px(C.sbBoxDark, 126, y + 1, 1, bh - 2);
+  px(C.sbBoxDark, 124, y + bh - 1, 3, 1);
+}
+
+function inboxList() {
+  const fromText = $('inbox').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const i = l.indexOf('|');
+    return i < 0 ? { from: l, text: '', read: true }
+                 : { from: l.slice(0, i).trim(), text: l.slice(i + 1).trim(), read: true };
+  });
+  return [...S.received, ...fromText];
+}
+function fit(fontName, s, maxW) {
+  if (textWidth(fontName, s) <= maxW) return s;
+  while (s && textWidth(fontName, s + '..') > maxW) s = s.slice(0, -1);
+  return s + '..';
+}
+
+// ---- screens ----
+function drawIdle() {
+  const t = th();
+  if (t) {                                  // vertical gradient, one colour per row
+    for (let y = 0; y < H; y++) {
+      const k = y / (H - 1), c = t.idleTop.map((v, i) => Math.round(v + (t.idleBottom[i] - v) * k));
+      px(`rgb(${c})`, 0, y, W, 1);
+    }
+  }
+  const ink = t ? t.idleInk : C.idle;
+  statusBars();
+  clock(ink);
+  drawText(ctx, 'bold', $('op').value, 64, 30, ink, 'center');
+  drawText(ctx, 'small', $('date').value, 64, 70, ink, 'center');
+  softkeys('Перейти', 'Меню', 'Имена', ink);
+}
+
+function drawIncoming() {
+  if (S.resume === 'tennis') return drawIncomingPopup();
+  chrome(false);
+  statusBars();
+  clock(clockInk());
+  incomingContent(49, 46, 72, [0, 40, W, 84], th() ? th().body : C.bg);
+  softkeys('', 'Показ.', 'Выйти');
+}
+// Envelope, text and the unread counter (2, 3, ... when more SMS came in on top of this screen).
+// While S.reveal < 3 the block below a cut line is still blank: a new SMS draws in three steps.
+function incomingContent(ex, ey, ty, area, bg) {
+  sprite('envelope', ex, ey);
+  drawText(ctx, 'bold', 'Сообщение', 64, ty, C.ink, 'center');
+  drawText(ctx, 'bold', 'получено', 64, ty + 15, C.ink, 'center');
+  if (S.unread > 1) drawText(ctx, 'bold', String(S.unread), 64, ty + 31, C.ink, 'center');
+  if (S.reveal < 3) {
+    const [x, y, w, h] = area, cut = Math.round(y + h * S.reveal / 3);
+    px(bg, x, cut, w, y + h - cut);
+  }
+}
+
+// New SMS during the game: a window over the paused game, which stays visible around it.
+function drawIncomingPopup() {
+  drawTennis();
+  const t = th(), x = 10, y = 40, w = 108, h = 84;
+  px('rgba(0,0,0,0.35)', x + 2, y + 2, w, h);              // shadow
+  px(t ? t.title : C.ink, x, y, w, h);                      // frame
+  px(t ? t.body : C.bg, x + 1, y + 1, w - 2, h - 2);
+  incomingContent(49, y + 6, y + 28, [x + 1, y + 1, w - 2, h - 2], t ? t.body : C.bg);
+  px(t ? t.soft : C.bg, 0, 143, W, H - 143);
+  softkeys('', 'Показ.', 'Выйти');
+}
+
+function drawRead() {
+  const m = S.msg, LH = 13, top = 30, bottom = 142, maxW = 120;
+  chrome(true);
+  statusBars();
+  clock(clockInk());
+  title(m.from);
+  const lines = [m.date + ' ' + m.time, ...wrapText('small', m.text, maxW)];
+  const vis = Math.floor((bottom - top) / LH);
+  S.maxScroll = Math.max(0, lines.length - vis);
+  S.scroll = Math.min(S.scroll, S.maxScroll);
+  lines.slice(S.scroll, S.scroll + vis).forEach((ln, i) =>
+    drawText(ctx, 'small', ln, 2, top + i * LH, C.ink));
+  if (S.maxScroll) scrollbar(S.scroll, S.maxScroll + 1);
+  softkeys('Опции', 'Ответ.', 'Назад');
+}
+
+function drawInbox() {
+  const list = inboxList(), RH = 17, top = 28, vis = 6, t = th();
+  chrome(true);
+  statusBars();
+  clock(clockInk());
+  S.sel = Math.max(0, Math.min(S.sel, list.length - 1));
+  if (S.sel < S.top) S.top = S.sel;
+  if (S.sel >= S.top + vis) S.top = S.sel - vis + 1;
+  title('Входящие', list.length || '');      // number of messages
+  list.slice(S.top, S.top + vis).forEach((m, i) => {
+    const y = top + i * RH, on = S.top + i === S.sel;
+    if (t) { if (on) px(t.sel, 0, y, 122, RH); else px(t.line, 0, y + RH - 1, 122, 1); }
+    else if (on) selBar(y, RH);
+    icon(m.read ? ICON.read : ICON.unread, 3, y + (m.read ? 4 : 5));
+    drawText(ctx, 'bold', fit('bold', m.from, 102), 16, y + 2, on ? (t ? t.selInk : C.bg) : C.ink);
+  });
+  if (!list.length) drawText(ctx, 'small', '(Нет сообщений)', 64, 70, C.ink, 'center');
+  scrollbar(S.sel, list.length);
+  softkeys(list.length ? 'Опции' : '', list.length ? 'Показ.' : '', 'Назад');
+}
+
+function draw() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ({ idle: drawIdle, incoming: drawIncoming, read: drawRead, inbox: drawInbox, tennis: () => drawTennis() })[S.mode]();
+  present();
+}
+
+// ---- photo overlay: pixel grid, pixel noise, dirty glass, defocus ----
+// Sizes are in LCD pixels, so the look stays the same at every scale.
+const FX_IDS = ['fxGrid', 'fxGridAlpha', 'fxGridBlur', 'fxNoise', 'fxDirt', 'fxCA', 'fxDefocus', 'fxFocus', 'fxDof'];
+const fx = id => +$(id).value;
+
+function rng(seed) {                       // fixed seed: the pattern never flickers
+  return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+}
+const NOISE = (() => {                     // per-pixel brightness offset, roughly -1..1
+  const r = rng(6070), a = new Float32Array(W * H);
+  for (let i = 0; i < a.length; i++) a[i] = (r() + r() + r() - 1.5) / 1.5;
+  return a;
+})();
+
+const noisy = document.createElement('canvas');
+noisy.width = W; noisy.height = H;
+const nctx = noisy.getContext('2d', { willReadFrequently: true });
+function applyNoise(amount) {
+  nctx.drawImage(lcd, 0, 0);
+  const d = nctx.getImageData(0, 0, W, H), p = d.data;
+  for (let i = 0; i < W * H; i++) {
+    const m = 1 + NOISE[i] * amount;
+    p[i * 4] *= m; p[i * 4 + 1] *= m; p[i * 4 + 2] *= m;
+  }
+  nctx.putImageData(d, 0, 0);
+  return noisy;
+}
+
+let gridCache = {};
+function gridLayer(k, t) {                 // black gaps between LCD pixels, t = gap width in LCD px
+  const key = k + '/' + t;
+  if (gridCache.key === key) return gridCache.cv;
+  const cv = document.createElement('canvas');
+  cv.width = W * k; cv.height = H * k;
+  const g = cv.getContext('2d'), tw = t * k;
+  g.fillStyle = '#000';
+  for (let x = 0; x <= W; x++) g.fillRect(x * k - tw / 2, 0, tw, H * k);
+  for (let y = 0; y <= H; y++) g.fillRect(0, y * k - tw / 2, W * k, tw);
+  gridCache = { key, cv };
+  return cv;
+}
+
+const DIRT = (() => {                      // glass smudges, fingerprints, dust and hairs at 4x LCD size
+  const cv = document.createElement('canvas'), S4 = 4;
+  cv.width = W * S4; cv.height = H * S4;
+  const g = cv.getContext('2d'), r = rng(2008), w = cv.width, h = cv.height;
+  for (let i = 0; i < 26; i++) {           // greasy haze
+    const x = r() * w, y = r() * h, rad = 30 + r() * 140;
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(235,238,240,${0.10 + r() * 0.22})`);
+    gr.addColorStop(1, 'rgba(235,238,240,0)');
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  for (let f = 0; f < 3; f++) {            // fingerprints: concentric ridges
+    const cx = r() * w, cy = r() * h, rot = r() * Math.PI, sx = 40 + r() * 30;
+    g.save(); g.translate(cx, cy); g.rotate(rot);
+    for (let i = 1; i < 18; i++) {
+      g.strokeStyle = `rgba(240,240,240,${0.14 * (1 - i / 18)})`;
+      g.lineWidth = 1.5;
+      g.beginPath(); g.ellipse(0, 0, i * sx / 18, i * sx / 12, 0, 0, Math.PI * 2); g.stroke();
+    }
+    g.restore();
+  }
+  for (let i = 0; i < 260; i++) {          // dust specks
+    const x = r() * w, y = r() * h, s = 0.6 + r() * r() * 2.5, light = r() < 0.6;
+    g.fillStyle = light ? `rgba(255,255,255,${0.3 + r() * 0.5})` : `rgba(40,40,40,${0.2 + r() * 0.4})`;
+    g.beginPath(); g.arc(x, y, s, 0, Math.PI * 2); g.fill();
+  }
+  for (let i = 0; i < 4; i++) {            // hairs and fine scratches
+    let x = r() * w, y = r() * h, a = r() * Math.PI * 2;
+    g.strokeStyle = `rgba(250,250,250,${0.25 + r() * 0.3})`; g.lineWidth = 0.8;
+    g.beginPath(); g.moveTo(x, y);
+    for (let j = 0; j < 30; j++) { a += (r() - 0.5) * 0.4; x += Math.cos(a) * 3; y += Math.sin(a) * 3; g.lineTo(x, y); }
+    g.stroke();
+  }
+  return cv;
+})();
+
+// Phone bodies. screenX/Y/W is where the 128x160 LCD goes, in image pixels.
+// Body and screen go into one canvas, so aberration and defocus act on both.
+const BODIES = {
+  // photo of a real 6070 (references/photos-6070/Nokia_6070_(RM-166).jpg); lit screen x 86.5..366, y 141.5..486.5
+  dark: { src: 'assets/phone-6070.png', w: 450, h: 1024, screenX: 86.5, screenY: 141.5, screenW: 279.5 },
+  // generated from that photo (references/generated); the glass is wider than 4:5, so the LCD
+  // fills its height and dark glass shows at the sides
+  silverA: { src: 'assets/phone-6070-silver-a.png', w: 760, h: 1344, screenX: 191.7, screenY: 191, screenW: 333.6 },
+  silverB: { src: 'assets/phone-6070-silver-b.png', w: 760, h: 1344, screenX: 213.3, screenY: 206, screenW: 326.4 },
+};
+let BODY = BODIES.dark;
+const bodyImg = new Image();
+function setBody(name) {
+  BODY = BODIES[name] || BODIES.dark;
+  bodyKey = '';
+  bodyImg.src = ASSET[BODY.src];
+}
+const [bodyAdj, bodyAdjCtx] = (() => { const c = document.createElement('canvas'); return [c, c.getContext('2d', { willReadFrequently: true })]; })();
+let bodyKey = '';
+function adjustedBody() {                  // brightness, gamma, saturation applied at photo resolution
+  const br = +$('bodyBright').value, gm = +$('bodyGamma').value, sat = +$('bodySat').value;
+  const key = [BODY.src, br, gm, sat].join('/');
+  if (key === bodyKey) return bodyAdj;
+  bodyAdj.width = BODY.w; bodyAdj.height = BODY.h;
+  bodyAdjCtx.drawImage(bodyImg, 0, 0);
+  const d = bodyAdjCtx.getImageData(0, 0, BODY.w, BODY.h), p = d.data, lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) lut[i] = 255 * Math.pow(Math.min(1, i / 255 * br), 1 / gm);
+  for (let i = 0; i < p.length; i += 4) {
+    const r = lut[p[i]], g = lut[p[i + 1]], b = lut[p[i + 2]], l = 0.299 * r + 0.587 * g + 0.114 * b;
+    p[i] = l + (r - l) * sat; p[i + 1] = l + (g - l) * sat; p[i + 2] = l + (b - l) * sat;
+  }
+  bodyAdjCtx.putImageData(d, 0, 0);
+  bodyKey = key;
+  return bodyAdj;
+}
+bodyImg.onload = () => { bodyKey = ''; present(); };
+
+const canvas2d = () => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; };
+const [buf, bctx] = canvas2d();
+const [comp, compCtx] = canvas2d();
+const [caBuf, caCtx] = canvas2d();
+const [chan, chCtx] = canvas2d();
+const blurLevels = [];
+
+// Lateral chromatic aberration around the screen centre (cx, cy): red and green are enlarged
+// more than blue, so colour fringes grow outwards. amount = red/blue split at the screen side edges, in LCD px.
+function chromatic(src, amount, cx, cy) {
+  const w = src.width, h = src.height;
+  caBuf.width = chan.width = w; caBuf.height = chan.height = h;
+  caCtx.globalCompositeOperation = 'lighter';
+  // every channel is scaled up (never down), so no channel leaves an empty band at the edge
+  for (const [color, dir] of [['#f00', 2], ['#0f0', 1], ['#00f', 0]]) {
+    chCtx.globalCompositeOperation = 'source-over';
+    chCtx.clearRect(0, 0, w, h); chCtx.drawImage(src, 0, 0);
+    chCtx.globalCompositeOperation = 'multiply';
+    chCtx.fillStyle = color; chCtx.fillRect(0, 0, w, h);
+    chCtx.globalCompositeOperation = 'destination-in';   // keep the body's transparent outline
+    chCtx.drawImage(src, 0, 0);
+    const s = 1 + dir * amount / W;
+    caCtx.drawImage(chan, cx * (1 - s), cy * (1 - s), w * s, h * s);
+  }
+  caCtx.globalCompositeOperation = 'source-over';
+  return caBuf;
+}
+
+// Depth of field: sharp band around the focus line, blur grows above and below it,
+// over the screen and the body alike. focus and dof are measured on the screen (0 = its top).
+// Built from a few blurred copies, mixed in strips one LCD pixel high.
+function depthBlur(src, maxBlur, focus, dof, k, screenY) {
+  const w = src.width, h = src.height, N = 6;
+  for (let i = 0; i <= N; i++) {
+    if (!blurLevels[i]) blurLevels[i] = canvas2d();
+    const [c, g] = blurLevels[i];
+    c.width = w; c.height = h;
+    g.filter = i ? `blur(${maxBlur * k * i / N}px)` : 'none';
+    g.drawImage(src, 0, 0);
+    g.filter = 'none';
+  }
+  vctx.clearRect(0, 0, w, h);
+  const fy = screenY + focus * H * k, half = dof * H * k / 2, reach = Math.max(k, H * k - half);
+  for (let y = 0; y < h; y += k) {
+    const d = Math.max(0, Math.abs(y + k / 2 - fy) - half) / reach;
+    const lv = Math.min(1, d * 1.6) * N, i = Math.floor(lv), t = lv - i;
+    vctx.globalAlpha = 1;
+    vctx.drawImage(blurLevels[i][0], 0, y, w, k, 0, y, w, k);
+    if (t > 0 && i < N) {
+      vctx.globalAlpha = t;
+      vctx.drawImage(blurLevels[i + 1][0], 0, y, w, k, 0, y, w, k);
+    }
+  }
+  vctx.globalAlpha = 1;
+}
+
+let LAYOUT = { k: 1, sx: 0, sy: 0 };
+let CAPTURE = null;
+let NO_DEFOCUS = false;                      // the shot plays and renders without defocus                         // { k, kUser } while seq.js renders the shot
+const FRAME_REF = 1280;                     // camera numbers are in pixels of a 1280 px wide frame
+const frameScale = () => ($('frame').clientWidth || FRAME_REF) / FRAME_REF;
+
+// ---- reflection in the screen glass ----
+// The environment (background picture or the background gradient) is mirrored, blurred and laid over
+// the screen with 'screen' blending; a soft highlight band can be added. Both slide as the phone turns.
+const [envC, envCtx] = canvas2d();
+let reflImg = null, reflSrc = '';
+function reflection(w, h, k) {
+  const env = +$('reflEnv').value, band = +$('reflBand').value;
+  if (!env && !band) return null;
+  envC.width = w; envC.height = h;
+  const follow = $('reflFollow').checked;
+  const dx = +$('reflShift').value + (follow ? +$('rotY').value / 45 : 0);
+  const dy = follow ? -$('rotX').value / 45 : 0;
+  if (env) {
+    const ew = w * 2.4, eh = h * 2.4, ox = (w - ew) / 2 + dx * w * 0.6, oy = (h - eh) / 2 + dy * h * 0.6;
+    envCtx.save();
+    envCtx.globalAlpha = env;
+    envCtx.filter = `blur(${+$('reflBlur').value * k}px)`;
+    envCtx.translate(w, 0); envCtx.scale(-1, 1);          // a mirror image
+    if (reflImg && reflImg.complete && reflImg.naturalWidth) {
+      const s = Math.max(ew / reflImg.naturalWidth, eh / reflImg.naturalHeight);
+      const iw = reflImg.naturalWidth * s, ih = reflImg.naturalHeight * s;
+      envCtx.drawImage(reflImg, ox + (ew - iw) / 2, oy + (eh - ih) / 2, iw, ih);
+    } else {
+      envCtx.fillStyle = $('bg3').value; envCtx.fillRect(ox, oy, ew, eh);
+      for (const [id, fx, fy, r] of [['bg1', 0.25, 0.35, 0.5], ['bg2', 0.8, 0.7, 0.6]]) {
+        const cx = ox + ew * fx, cy = oy + eh * fy, g = envCtx.createRadialGradient(cx, cy, 0, cx, cy, ew * r);
+        g.addColorStop(0, $(id).value); g.addColorStop(1, 'rgba(0,0,0,0)');
+        envCtx.fillStyle = g; envCtx.fillRect(ox, oy, ew, eh);
+      }
+    }
+    envCtx.restore();
+  }
+  if (band) {
+    const bw = +$('reflBandW').value * w;
+    envCtx.save();
+    envCtx.globalAlpha = band;
+    envCtx.filter = `blur(${+$('reflBlur').value * k / 2}px)`;
+    envCtx.translate(w * (0.5 + dx * 0.5), h * (0.5 + dy * 0.3));
+    envCtx.rotate(+$('reflAngle').value * Math.PI / 180);
+    const g = envCtx.createLinearGradient(-bw / 2, 0, bw / 2, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.85)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    envCtx.fillStyle = g; envCtx.fillRect(-bw / 2, -h * 2, bw, h * 4);
+    envCtx.restore();
+  }
+  return envC;
+}
+
+// Click position -> canvas pixel on the rotated, zoomed phone. The four corner markers give the
+// projected quad; a homography from the unit square to that quad is inverted for the click.
+function clientToCanvas(cx, cy) {
+  const q = [...document.querySelectorAll('#phone .corner')].map(m => { const r = m.getBoundingClientRect(); return [r.left, r.top]; });
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
+  const sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+  let a, b, c, d, e, f, g, h;
+  const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2, den = dx1 * dy2 - dx2 * dy1;
+  g = (sx * dy2 - dx2 * sy) / den; h = (dx1 * sy - sx * dy1) / den;
+  a = x1 - x0 + g * x1; b = x3 - x0 + h * x3; c = x0;
+  d = y1 - y0 + g * y1; e = y3 - y0 + h * y3; f = y0;
+  // invert [a b c; d e f; g h 1]
+  const A = e - f * h, B = c * h - b, C = b * f - c * e, D = f * g - d, E = a - c * g, F = c * d - a * f,
+        G = d * h - e * g, Hh = b * g - a * h, I = a * e - b * d;
+  const w = G * cx + Hh * cy + I, u = (A * cx + B * cy + C) / w, v = (D * cx + E * cy + F) / w;
+  return [u * view.width, v * view.height];
+}
+function present() {
+  const k = CAPTURE ? CAPTURE.k : +$('scale').value, w = W * k, h = H * k;
+  const bodyOn = $('showBody').checked && bodyImg.complete && bodyImg.naturalWidth;
+  const f = w / BODY.screenW;
+  const cw = bodyOn ? Math.round(BODY.w * f) : w, ch = bodyOn ? Math.round(BODY.h * f) : h;
+  const sx = bodyOn ? Math.round(BODY.screenX * f) : 0, sy = bodyOn ? Math.round(BODY.screenY * f) : 0;
+  LAYOUT = { k, sx, sy };                  // for clicks on the screen
+  if (buf.width !== w || buf.height !== h) { buf.width = w; buf.height = h; }
+  if (view.width !== cw || view.height !== ch) { view.width = comp.width = cw; view.height = comp.height = ch; }
+  // CSS size follows the chosen scale even while a capture renders at a higher one
+  // fixed 1.25 (the author's Windows scaling) instead of dpr, so cameras frame the same on any screen
+  const css = (CAPTURE ? CAPTURE.kUser / k : 1) / 1.25 * frameScale();
+  view.style.width = cw * css + 'px';
+  view.style.height = ch * css + 'px';
+
+  const noise = fx('fxNoise'), grid = fx('fxGrid'), dirt = fx('fxDirt'), defocus = NO_DEFOCUS ? 0 : fx('fxDefocus');
+  bctx.clearRect(0, 0, w, h);
+  bctx.imageSmoothingEnabled = false;
+  bctx.drawImage(noise ? applyNoise(noise) : lcd, 0, 0, w, h);
+  if (grid) {
+    bctx.globalAlpha = fx('fxGridAlpha');
+    bctx.filter = fx('fxGridBlur') ? `blur(${fx('fxGridBlur') * k}px)` : 'none';
+    bctx.drawImage(gridLayer(k, grid), 0, 0);
+    bctx.filter = 'none'; bctx.globalAlpha = 1;
+  }
+  if (dirt) {
+    bctx.imageSmoothingEnabled = true;
+    bctx.globalAlpha = dirt;
+    bctx.drawImage(DIRT, 0, 0, w, h);
+    bctx.globalAlpha = 1;
+  }
+
+  compCtx.clearRect(0, 0, cw, ch);
+  if (bodyOn) { compCtx.imageSmoothingEnabled = true; compCtx.drawImage(adjustedBody(), 0, 0, cw, ch); }
+  compCtx.drawImage(buf, sx, sy);
+  const refl = reflection(w, h, k);
+  if (refl) {                                // the glass reflects on top of the lit pixels
+    compCtx.globalCompositeOperation = 'screen';
+    compCtx.drawImage(refl, sx, sy);
+    compCtx.globalCompositeOperation = 'source-over';
+  }
+
+  const ca = fx('fxCA');
+  const out = ca ? chromatic(comp, ca, sx + w / 2, sy + h / 2) : comp;
+  vctx.imageSmoothingEnabled = false;
+  if (defocus) depthBlur(out, defocus, fx('fxFocus'), fx('fxDof'), k, sy);
+  else { vctx.clearRect(0, 0, cw, ch); vctx.drawImage(out, 0, 0); }
+}
+
+function showFx() {
+  FX_IDS.forEach(id => $(id).nextElementSibling.value = (+$(id).value).toFixed(2));
+}
+const FX_DEFAULTS = Object.fromEntries(FX_IDS.map(id => [id, $(id).value]));
+try {
+  const saved = JSON.parse(localStorage.getItem('nokia6070-fx') || '{}');
+  FX_IDS.forEach(id => { if (id in saved) $(id).value = saved[id]; });
+} catch (e) {}
+FX_IDS.forEach(id => $(id).oninput = () => {
+  showFx(); present();
+  try { localStorage.setItem('nokia6070-fx', JSON.stringify(Object.fromEntries(FX_IDS.map(i => [i, $(i).value])))); } catch (e) {}
+});
+$('fxReset').onclick = () => {
+  FX_IDS.forEach(id => $(id).value = FX_DEFAULTS[id]);
+  try { localStorage.removeItem('nokia6070-fx'); } catch (e) {}
+  showFx(); present();
+};
+showFx();
+
+// ---- actions ----
+function receive() {
+  S.msg = { from: $('from').value, text: $('text').value, time: $('time').value, date: $('date').value, read: false };
+  S.received.unshift(S.msg);
+  // during the game the SMS screen interrupts it; the game waits paused underneath
+  if (S.mode === 'tennis') { T.paused = true; S.resume = 'tennis'; }
+  if (S.mode === 'incoming') {
+    // another SMS on top of this screen: the counter grows and the notice redraws in three steps
+    S.unread++;
+    clearInterval(S.revealTimer);
+    S.reveal = 0; draw();
+    S.revealTimer = setInterval(() => {
+      if (++S.reveal >= 3) clearInterval(S.revealTimer);
+      draw();
+    }, 70);
+    return;
+  }
+  S.unread = 1; S.reveal = 3;
+  S.mode = 'incoming'; S.scroll = 0; draw();
+}
+function openMsg(m) {
+  m.read = true;
+  S.msg = { time: $('time').value, date: $('date').value, ...m };
+  S.mode = 'read'; S.scroll = 0; draw();
+}
+// New messages that land in the inbox without the "message received" screen, so the list grows.
+const MORE = [
+  ['900', 'Zachislenie 700r. Balans 3300r.'], ['Mama', 'Ty gde?'], ['900', 'Spisanie 120r. Balans 3180r.'],
+  ['Sasha', 'Nu chto, idem?'], ['Oleg', 'Ok, dogovorilis'], ['Lena', 'Perezvoni'], ['900', 'Zachislenie 2500r. Balans 5680r.'],
+  ['Dima', 'Igra v 7, ne opazdyvai'], ['Papa', 'Doehal'], ['900', 'Perevod 300r. vypolnen.'],
+];
+let moreN = 0;
+function addToInbox() {
+  const [from, text] = MORE[moreN++ % MORE.length];
+  S.received.unshift({ from, text, time: $('time').value, date: $('date').value, read: false });
+  if (S.mode === 'inbox') { S.sel++; S.top = S.sel > 0 && S.top > 0 ? S.top + 1 : S.top; }   // keep the highlight on the same message
+  draw();
+}
+function openInbox() { S.mode = 'inbox'; S.sel = 0; S.top = 0; draw(); }
+function center() {
+  if (S.mode === 'tennis') return pauseTennis();
+  if (S.mode === 'incoming') openMsg(S.received[0]);
+  else if (S.mode === 'idle') openInbox();
+  else if (S.mode === 'inbox') { const m = inboxList()[S.sel]; if (m) { openMsg(m); S.from = 'inbox'; } }
+}
+function right() {
+  if (S.mode === 'tennis') closeTennis();
+  if (S.mode === 'read' && S.from === 'inbox') { S.mode = 'inbox'; S.from = null; }
+  else if ((S.mode === 'incoming' || S.mode === 'read') && S.resume) { S.mode = S.resume; S.resume = null; }
+  else { S.mode = 'idle'; S.resume = null; }
+  draw();
+}
+function left()   {}
+function scroll(d) {
+  if (S.mode === 'inbox') { S.sel = Math.max(0, Math.min(inboxList().length - 1, S.sel + d)); draw(); return; }
+  if (S.mode !== 'read') return;
+  S.scroll = Math.max(0, Math.min(S.maxScroll || 0, S.scroll + d)); draw();
+}
+
+// ---- screen as a flat plane in 3D, inside the 16:9 frame ----
+// ---- phone body and background settings ----
+const REFL_IDS = ['reflEnv', 'reflBlur', 'reflBand', 'reflBandW', 'reflAngle', 'reflShift'];
+const LOOK_IDS = ['bodyBright', 'bodyGamma', 'bodySat', 'bgBlur', 'bgBright', 'bgScale', 'bgX', 'bgY', 'vignette', 'bg1', 'bg2', 'bg3', ...REFL_IDS];
+const LOOK_DEFAULTS = Object.fromEntries(LOOK_IDS.map(id => [id, $(id).value]));
+let bgUrl = '';
+function look() {
+  const fr = $('frame').style;
+  ['bg1', 'bg2', 'bg3', 'vignette'].forEach(id => fr.setProperty('--' + id, $(id).value));
+  const bg = $('bgImg').style;
+  bg.backgroundImage = bgUrl ? `url(${bgUrl})` : 'none';
+  bg.filter = `blur(${$('bgBlur').value}px) brightness(${$('bgBright').value})`;
+  bg.transform = `scale(${$('bgScale').value})`;
+  bg.backgroundPosition = `${$('bgX').value}% ${$('bgY').value}%`;
+  if (bgUrl !== reflSrc) {                   // the glass reflects the same picture
+    reflSrc = bgUrl;
+    reflImg = bgUrl ? Object.assign(new Image(), { src: bgUrl, onload: present }) : null;
+  }
+  LOOK_IDS.filter(id => $(id).type === 'range').forEach(id => $(id).nextElementSibling.value = (+$(id).value).toFixed(2));
+  present();
+  try {
+    localStorage.setItem('nokia6070-look', JSON.stringify({
+      ...Object.fromEntries(LOOK_IDS.map(i => [i, $(i).value])), showBody: $('showBody').checked, reflFollow: $('reflFollow').checked }));
+  } catch (e) {}
+}
+try {
+  const saved = JSON.parse(localStorage.getItem('nokia6070-look') || '{}');
+  LOOK_IDS.forEach(id => { if (id in saved) $(id).value = saved[id]; });
+  if ('showBody' in saved) $('showBody').checked = saved.showBody;
+  if ('reflFollow' in saved) $('reflFollow').checked = saved.reflFollow;
+  bgUrl = localStorage.getItem('nokia6070-bgimg') || '';
+} catch (e) {}
+[...LOOK_IDS, 'showBody', 'reflFollow'].forEach(id => $(id).oninput = look);
+
+// body kind
+try { if (localStorage.getItem('nokia6070-body')) $('bodyKind').value = localStorage.getItem('nokia6070-body'); } catch (e) {}
+$('bodyKind').onchange = () => {
+  try { localStorage.setItem('nokia6070-body', $('bodyKind').value); } catch (e) {}
+  setBody($('bodyKind').value);
+};
+setBody($('bodyKind').value);
+
+// ---- editable colours: the teal theme and the tennis game ----
+const hex = c => {                          // 'rgb(1,2,3)', '#abc', [1,2,3] -> '#010203'
+  const n = Array.isArray(c) ? c : c.startsWith('#') ? [1, 3, 5].map(i => parseInt((c.length === 4 ? c.replace(/\w/g, '$&$&').slice(1) : c.slice(1)).slice(i - 1, i + 1), 16)) : c.match(/\d+/g).map(Number);
+  return '#' + n.slice(0, 3).map(v => v.toString(16).padStart(2, '0')).join('');
+};
+const rgbArr = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const COLOR_SLOTS = {                       // get / set for each picker
+  'teal.status': ['status'], 'teal.title': ['title'], 'teal.body': ['body'], 'teal.soft': ['soft'],
+  'teal.softInk': ['softInk', 'titleInk', 'idleInk', 'selInk'], 'teal.clock': ['clock'],
+  'teal.sel': ['sel'], 'teal.line': ['line'], 'teal.idleTop': ['idleTop'], 'teal.idleBottom': ['idleBottom'],
+};
+function colorGet(key) {
+  if (key.startsWith('teal.')) return hex(THEMES.teal[COLOR_SLOTS[key][0]]);
+  const k = key.slice(5);
+  return hex(k === 'court' ? TP.bg[0] : TP[k]);
+}
+function colorSet(key, h) {
+  if (key.startsWith('teal.')) {
+    COLOR_SLOTS[key].forEach(f => THEMES.teal[f] = Array.isArray(THEMES.teal[f]) ? rgbArr(h) : h);  } else {
+    const k = key.slice(5);
+    if (k === 'court') TP.bg[0] = rgbArr(h); else TP[k] = h;
+  }
+}
+const pickers = [...document.querySelectorAll('#colors input[type=color]')];
+const COLOR_DEFAULTS = Object.fromEntries(pickers.map(p => [p.dataset.c, colorGet(p.dataset.c)]));
+try {
+  const saved = JSON.parse(localStorage.getItem('nokia6070-colors') || '{}');
+  Object.entries(saved).forEach(([k, v]) => k in COLOR_DEFAULTS && colorSet(k, v));
+} catch (e) {}
+pickers.forEach(p => {
+  p.value = colorGet(p.dataset.c);
+  p.oninput = () => {
+    colorSet(p.dataset.c, p.value);
+    try { localStorage.setItem('nokia6070-colors', JSON.stringify(Object.fromEntries(pickers.map(q => [q.dataset.c, q.value])))); } catch (e) {}
+    draw();
+  };
+});
+// ---- which picker is which: click the screen to pick, hover a picker to see its area blink ----
+function pickColorAt(x, y) {
+  const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+  const game = S.mode === 'tennis', teal = !!th();
+  const live = pickers.filter(p => p.dataset.c.startsWith(game ? 'game.' : 'teal.'));
+  if (!game && !teal) return colorNote('В белой теме Nokia цвета взяты с настоящего телефона и не настраиваются. Включи бирюзовую тему.');
+  const dist = p => { const [pr, pg, pb] = rgbArr(p.value); return (pr - r) ** 2 + (pg - g) ** 2 + (pb - b) ** 2; };
+  const bestD = Math.min(...live.map(dist));
+  // several slots can share a colour (title, softkey bar and selection are the same navy): decide by place
+  const ties = live.filter(p => dist(p) === bestD);
+  const where = y < 13 ? 'teal.status' : y >= 143 ? 'teal.soft' : y < 27 ? 'teal.title' : 'teal.sel';
+  let best = ties.find(p => p.dataset.c === where) || ties[0];
+  if (!game && S.mode === 'idle') best = pickers.find(p => p.dataset.c === (y < H / 2 ? 'teal.idleTop' : 'teal.idleBottom'));
+  else if (bestD > 40 * 40) return colorNote('Этот цвет не настраивается (иконки, конверт, шрифт).');
+  selectPicker(best);
+}
+function colorNote(text) { $('colorNote').textContent = text; $('colorNote').hidden = false; }
+function selectPicker(p) {
+  $('colorNote').hidden = true;
+  pickers.forEach(q => q.parentElement.classList.toggle('picked', q === p));
+  p.parentElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  blink(p);
+  try { p.showPicker(); } catch (e) { p.focus(); }
+}
+let blinkTimer = null;
+function blink(p) {                         // flash the area painted with this colour
+  clearInterval(blinkTimer);
+  let n = 0;
+  const key = p.dataset.c;
+  blinkTimer = setInterval(() => {
+    colorSet(key, n % 2 ? p.value : '#ff00ff');
+    draw();
+    if (++n > 5) { clearInterval(blinkTimer); colorSet(key, p.value); draw(); }
+  }, 130);
+}
+pickers.forEach(p => p.parentElement.addEventListener('mouseenter', () => blink(p)));
+
+$('colorsReset').onclick = () => {
+  pickers.forEach(p => { colorSet(p.dataset.c, COLOR_DEFAULTS[p.dataset.c]); p.value = COLOR_DEFAULTS[p.dataset.c]; });
+  try { localStorage.removeItem('nokia6070-colors'); } catch (e) {}
+  draw();
+};
+function resetLook(ids) { ids.forEach(id => $(id).value = LOOK_DEFAULTS[id]); look(); }
+$('bodyReset').onclick = () => { $('showBody').checked = true; resetLook(['bodyBright', 'bodyGamma', 'bodySat']); };
+$('reflReset').onclick = () => { $('reflFollow').checked = true; resetLook(REFL_IDS); };
+$('bgReset').onclick = () => resetLook(['bgBlur', 'bgBright', 'bgScale', 'bgX', 'bgY', 'vignette', 'bg1', 'bg2', 'bg3']);
+
+// background picture: shrunk to 1600 px so it fits in browser storage
+$('bgFile').onchange = () => {
+  const file = $('bgFile').files[0];
+  if (!file) return;
+  const im = new Image();
+  im.onload = () => {
+    const s = Math.min(1, 1600 / Math.max(im.width, im.height)), c = document.createElement('canvas');
+    c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    bgUrl = c.toDataURL('image/jpeg', 0.88);
+    URL.revokeObjectURL(im.src);
+    try { localStorage.setItem('nokia6070-bgimg', bgUrl); } catch (e) {}
+    look();
+  };
+  im.src = URL.createObjectURL(file);
+};
+$('bgClear').onclick = () => {
+  bgUrl = ''; $('bgFile').value = '';
+  try { localStorage.removeItem('nokia6070-bgimg'); } catch (e) {}
+  look();
+};
+
+const ROT_IDS = ['rotX', 'rotY', 'rotZ', 'persp', 'zoom'];
+const ROT_DEFAULTS = Object.fromEntries(ROT_IDS.map(id => [id, $(id).value]));
+const pan = { x: 0, y: 0 };                // screen offset in the frame, CSS px
+const zoomOf = () => 2 ** +$('zoom').value;
+function place() {
+  const fs = frameScale();
+  $('frame').style.perspective = $('persp').value * fs + 'px';
+  $('phone').style.transform = `translate(${pan.x * fs}px, ${pan.y * fs}px) scale3d(${zoomOf()}, ${zoomOf()}, ${zoomOf()}) ` +
+    `rotateX(${$('rotX').value}deg) rotateY(${$('rotY').value}deg) rotateZ(${$('rotZ').value}deg)`;
+  ROT_IDS.forEach(id => $(id).nextElementSibling.value = Math.round($(id).value));
+  $('zoom').nextElementSibling.value = 'x' + zoomOf().toFixed(2);
+  if ($('reflFollow').checked && (+$('reflEnv').value || +$('reflBand').value)) present();   // reflection slides
+  try {
+    localStorage.setItem('nokia6070-3d', JSON.stringify({ ...Object.fromEntries(ROT_IDS.map(i => [i, $(i).value])), pan }));
+  } catch (e) {}
+}
+try {
+  const saved = JSON.parse(localStorage.getItem('nokia6070-3d') || '{}');
+  ROT_IDS.forEach(id => { if (id in saved) $(id).value = saved[id]; });
+  if (saved.pan) Object.assign(pan, saved.pan);
+} catch (e) {}
+ROT_IDS.forEach(id => $(id).oninput = place);
+$('rotReset').onclick = () => { ROT_IDS.forEach(id => $(id).value = ROT_DEFAULTS[id]); pan.x = pan.y = 0; place(); };
+
+// wheel: zoom towards the cursor, keeping the point under it in place
+$('frame').addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = $('frame').getBoundingClientRect();
+  const cx = e.clientX - r.left - r.width / 2, cy = e.clientY - r.top - r.height / 2;
+  const z1 = zoomOf();
+  $('zoom').value = Math.max(-3, Math.min(3, +$('zoom').value - Math.sign(e.deltaY) * 0.15));
+  const f = zoomOf() / z1;
+  const fs = frameScale(), ux = cx / fs, uy = cy / fs;
+  pan.x = ux - (ux - pan.x) * f; pan.y = uy - (uy - pan.y) * f;
+  place();
+}, { passive: false });
+
+let drag = null;                           // drag: turn and tilt; Shift or middle button: move
+$('frame').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  drag = { x: e.clientX, y: e.clientY, rx: +$('rotX').value, ry: +$('rotY').value,
+           px: pan.x, py: pan.y, move: e.shiftKey || e.button === 1,
+           at: e.target === view ? clientToCanvas(e.clientX, e.clientY) : null };
+  $('frame').setPointerCapture(e.pointerId); $('frame').classList.add('drag');
+});
+$('frame').addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (drag.move) { pan.x = drag.px + dx / frameScale(); pan.y = drag.py + dy / frameScale(); place(); return; }
+  const clamp = v => Math.max(-70, Math.min(70, v));
+  $('rotY').value = clamp(drag.ry + dx * 0.3);
+  $('rotX').value = clamp(drag.rx - dy * 0.3);
+  place();
+});
+$('frame').addEventListener('pointerup', e => {
+  // a click without dragging on the phone screen picks the colour under it
+  if (drag && drag.at && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 4) {
+    const x = Math.floor((drag.at[0] - LAYOUT.sx) / LAYOUT.k), y = Math.floor((drag.at[1] - LAYOUT.sy) / LAYOUT.k);
+    if (x >= 0 && y >= 0 && x < W && y < H) pickColorAt(x, y);
+  }
+  drag = null; $('frame').classList.remove('drag');
+});
+place();
+look();
+addEventListener('resize', () => { place(); present(); });
+
+// ---- camera presets: rotation, perspective, zoom and offset ----
+let cams = [], camOn = -1;
+try { cams = JSON.parse(localStorage.getItem('nokia6070-cams') || '[]'); } catch (e) {}
+const camNow = () => ({ ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } });
+function saveCams() { try { localStorage.setItem('nokia6070-cams', JSON.stringify(cams)); } catch (e) {} }
+function useCam(i) {
+  const c = cams[i];
+  ROT_IDS.forEach(id => { if (id in c) $(id).value = c[id]; });
+  Object.assign(pan, c.pan || { x: 0, y: 0 });
+  camOn = i; place(); showCams();
+}
+function showCams() {
+  $('cams').replaceChildren(...cams.map((c, i) => {
+    const wrap = document.createElement('span'), b = document.createElement('button'), x = document.createElement('button');
+    b.textContent = 'Камера ' + (i + 1); b.className = i === camOn ? 'on' : ''; b.onclick = () => useCam(i);
+    x.textContent = '×'; x.className = 'x'; x.title = 'Удалить';
+    x.onclick = () => { cams.splice(i, 1); camOn = camOn === i ? -1 : camOn > i ? camOn - 1 : camOn; saveCams(); showCams(); };
+    wrap.append(b, x);
+    return wrap;
+  }));
+}
+$('camAdd').onclick = () => { cams.push(camNow()); camOn = cams.length - 1; saveCams(); showCams(); };
+showCams();
+
+// ---- save / load every setting to a .json file ----
+// Every control with an id or a data-c colour slot, the camera offset, saved cameras and the background picture.
+const settingControls = () => [...document.querySelectorAll('input[id], select[id], textarea[id], #colors input[data-c]')]
+  .filter(el => el.type !== 'file' && !el.disabled);
+const controlKey = el => el.id || 'c:' + el.dataset.c;
+$('saveAll').onclick = () => {
+  const data = {
+    app: 'nokia6070-emulator', version: 1,
+    controls: Object.fromEntries(settingControls().map(el => [controlKey(el), el.type === 'checkbox' ? el.checked : el.value])),
+    pan: { ...pan }, cams, bgImage: bgUrl,
+    shotCams: typeof shotCams !== 'undefined' ? shotCams : undefined,
+  };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+  a.download = 'nokia6070-settings.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('loadAll').onclick = () => $('loadFile').click();
+// applies a settings object (from a file or the built-in defaults) through each control's own handler
+function applySettings(data) {
+  bgUrl = data.bgImage || '';
+  try { bgUrl ? localStorage.setItem('nokia6070-bgimg', bgUrl) : localStorage.removeItem('nokia6070-bgimg'); } catch (e) {}
+  for (const el of settingControls()) {
+    const k = controlKey(el);
+    if (!(k in data.controls)) continue;
+    if (el.type === 'checkbox') el.checked = data.controls[k]; else el.value = data.controls[k];
+    el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change'));
+  }
+  Object.assign(pan, data.pan || { x: 0, y: 0 });
+  cams = data.cams || []; camOn = -1; saveCams(); showCams();
+  if (Array.isArray(data.shotCams) && data.shotCams.length === 2 && typeof shotCams !== 'undefined') { shotCams = data.shotCams; saveShotCams(); }
+  place(); look(); draw();
+}
+$('loadFile').onchange = async () => {
+  const file = $('loadFile').files[0];
+  if (!file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (e) { alert('Это не файл настроек эмулятора.'); return; }
+  $('loadFile').value = '';
+  if (!data || !data.controls) { alert('Это не файл настроек эмулятора.'); return; }
+  applySettings(data);
+};
+
+const setScale = present;
+matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', present);
+
+$('send').onclick = receive;
+$('openTennis').onclick = () => openTennis();
+try { if (localStorage.getItem('nokia6070-ball')) $('ballSpeed').value = localStorage.getItem('nokia6070-ball'); } catch (e) {}
+$('ballSpeed').oninput = () => {
+  $('ballSpeedOut').value = 'x' + (+$('ballSpeed').value).toFixed(2);
+  try { localStorage.setItem('nokia6070-ball', $('ballSpeed').value); } catch (e) {}
+};
+$('ballSpeed').oninput();
+try { if (localStorage.getItem('nokia6070-theme')) $('theme').value = localStorage.getItem('nokia6070-theme'); } catch (e) {}
+$('theme').onchange = () => {
+  try { localStorage.setItem('nokia6070-theme', $('theme').value); } catch (e) {}
+  draw();
+};
+for (const [id, dir] of [['kL', 'left'], ['kR', 'right']]) {   // hold to run
+  $(id).onpointerdown = () => { T.keys[dir] = true; };
+  $(id).onpointerup = $(id).onpointerleave = () => { T.keys[dir] = false; };
+}
+addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft') T.keys.left = false;
+  if (e.key === 'ArrowRight') T.keys.right = false;
+});
+$('openInbox').onclick = openInbox;
+$('addInbox').onclick = addToInbox;
+$('inbox').oninput = () => S.mode === 'inbox' && draw();
+$('kl').onclick = left; $('kc').onclick = center; $('kr').onclick = right;
+$('ku').onclick = () => scroll(-1); $('kd').onclick = () => scroll(1);
+$('scale').onchange = setScale;
+['op', 'time', 'date'].forEach(id => $(id).oninput = draw);
+
+addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  const k = e.key;
+  if (k === 'F1') left();
+  else if (k === 'Enter') center();
+  else if (k === 'Escape' || k === 'F2') right();
+  else if (k === 'ArrowUp') scroll(-1);
+  else if (k === 'ArrowDown') scroll(1);
+  else if (k === 'ArrowLeft') T.keys.left = true;
+  else if (k === 'ArrowRight') T.keys.right = true;
+  else if (k.toLowerCase() === 's' || k.toLowerCase() === 'ы') receive();
+  else return;
+  e.preventDefault();
+});
+
+setScale();
+draw();
+</script>
+<script src="seq.js"></script>
+</body>
+</html>
