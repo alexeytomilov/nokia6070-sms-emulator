@@ -6,10 +6,9 @@
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#202225;color:#ccc;font:13px system-ui,sans-serif;height:100vh;
-    display:grid;grid-template-columns:230px 1fr 230px 300px;grid-template-rows:1fr auto;gap:16px;padding:16px}
+    display:grid;grid-template-columns:260px 1fr 300px;grid-template-rows:1fr auto;gap:16px;padding:16px}
   .panel{display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
   #bodyPanel{grid-column:1;grid-row:1}
-  #bgPanel{grid-column:3;grid-row:1}
   #center{grid-column:2;grid-row:1;min-height:0;display:flex;align-items:center;justify-content:center}
   #frame{aspect-ratio:16/9;width:min(100%, calc((100vh - 290px) * 16 / 9));background:#000;overflow:hidden;
     display:flex;align-items:center;justify-content:center;perspective:900px;cursor:grab;position:relative}
@@ -22,9 +21,9 @@
   #phone{position:relative;flex:none;transform-style:preserve-3d}
   #view{image-rendering:pixelated;display:block}
   .corner{position:absolute;width:0;height:0;pointer-events:none}
-  #bottom{grid-column:1/4;grid-row:2;display:flex;gap:16px;align-items:flex-start}
+  #bottom{grid-column:1/3;grid-row:2;display:flex;gap:16px;align-items:flex-start}
   #bottom>.col{display:flex;flex-direction:column;gap:8px;flex:1;min-width:0}
-  #side{grid-column:4;grid-row:1/3;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+  #side{grid-column:3;grid-row:1/3;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
   label{display:flex;flex-direction:column;gap:4px}
   input,textarea,select,button{font:inherit;background:#2c2f33;color:#eee;border:1px solid #444;border-radius:4px;padding:6px}
   textarea{height:62px;resize:vertical}
@@ -61,26 +60,6 @@
     <label>Насыщенность<span><input type="range" id="bodySat" min="0" max="2" step="0.01" value="1"><output></output></span></label>
     <button id="bodyReset">Сбросить корпус</button>
   </fieldset>
-  <fieldset id="colors">
-    <legend>Цвета</legend>
-    <div class="hint">Бирюзовая тема экрана:</div>
-    <div class="row"><label>Статус<input type="color" data-c="teal.status"></label><label>Заголовок<input type="color" data-c="teal.title"></label></div>
-    <div class="row"><label>Фон экрана<input type="color" data-c="teal.body"></label><label>Нижняя полоса<input type="color" data-c="teal.soft"></label></div>
-    <div class="row"><label>Текст на полосах<input type="color" data-c="teal.softInk"></label><label>Часы<input type="color" data-c="teal.clock"></label></div>
-    <div class="row"><label>Выделение<input type="color" data-c="teal.sel"></label><label>Линии списка<input type="color" data-c="teal.line"></label></div>
-    <div class="row"><label>Главный: верх<input type="color" data-c="teal.idleTop"></label><label>Главный: низ<input type="color" data-c="teal.idleBottom"></label></div>
-    <div class="hint">Игра:</div>
-    <div class="row"><label>Корт<input type="color" data-c="game.court"></label><label>Линии корта<input type="color" data-c="game.line"></label></div>
-    <div class="row"><label>Игроки, рубль<input type="color" data-c="game.dark"></label><label>Сетка, след<input type="color" data-c="game.mid"></label></div>
-    <div class="hint" id="colorNote" hidden></div>
-    <div class="hint">Кликни по экрану телефона, и нужный цвет выделится здесь. Наведи на цвет, и его место на экране мигнёт.</div>
-    <button id="colorsReset">Сбросить цвета</button>
-  </fieldset>
-</div>
-
-<div id="center"><div id="frame"><div id="bgImg"></div><div id="phone"><canvas id="view"></canvas><i class="corner" style="left:0;top:0"></i><i class="corner" style="right:0;top:0"></i><i class="corner" style="right:0;bottom:0"></i><i class="corner" style="left:0;bottom:0"></i></div></div></div>
-
-<div id="bgPanel" class="panel">
   <fieldset>
     <legend>Фон</legend>
     <label>Картинка фона (HDRI, фото)<input type="file" id="bgFile" accept="image/*"></label>
@@ -111,7 +90,25 @@
     <div class="hint">Без картинки фона отражается градиент из цветов фона.</div>
     <button id="reflReset">Сбросить отражение</button>
   </fieldset>
+  <fieldset id="colors">
+    <legend>Цвета</legend>
+    <div class="hint">Бирюзовая тема экрана:</div>
+    <div class="row"><label>Статус<input type="color" data-c="teal.status"></label><label>Заголовок<input type="color" data-c="teal.title"></label></div>
+    <div class="row"><label>Фон экрана<input type="color" data-c="teal.body"></label><label>Нижняя полоса<input type="color" data-c="teal.soft"></label></div>
+    <div class="row"><label>Текст на полосах<input type="color" data-c="teal.softInk"></label><label>Часы<input type="color" data-c="teal.clock"></label></div>
+    <div class="row"><label>Выделение<input type="color" data-c="teal.sel"></label><label>Линии списка<input type="color" data-c="teal.line"></label></div>
+    <div class="row"><label>Главный: верх<input type="color" data-c="teal.idleTop"></label><label>Главный: низ<input type="color" data-c="teal.idleBottom"></label></div>
+    <div class="hint">Игра:</div>
+    <div class="row"><label>Корт<input type="color" data-c="game.court"></label><label>Линии корта<input type="color" data-c="game.line"></label></div>
+    <div class="row"><label>Игроки, рубль<input type="color" data-c="game.dark"></label><label>Сетка, след<input type="color" data-c="game.mid"></label></div>
+    <div class="hint" id="colorNote" hidden></div>
+    <div class="hint">Кликни по экрану телефона, и нужный цвет выделится здесь. Наведи на цвет, и его место на экране мигнёт.</div>
+    <button id="colorsReset">Сбросить цвета</button>
+  </fieldset>
 </div>
+
+<div id="center"><div id="frame"><div id="bgImg"></div><div id="phone"><canvas id="view"></canvas><i class="corner" style="left:0;top:0"></i><i class="corner" style="right:0;top:0"></i><i class="corner" style="right:0;bottom:0"></i><i class="corner" style="left:0;bottom:0"></i></div></div></div>
+
 
 <div id="bottom">
   <div class="col">

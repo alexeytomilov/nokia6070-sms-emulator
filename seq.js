@@ -432,7 +432,7 @@ function applyShotLook() {
     <button class="main" id="shotPlay">▶ Проиграть шот</button>
     <button class="main" id="shotCapture">● Capture 2020×1180 (кадр 1920×1080 + 50 px вокруг)</button>
     <div class="hint" id="shotInfo"></div>`;
-  $('side').insertBefore(box, $('side').children[2]);
+  $('side').append(box);                  // camera, overlay, then the shot and its outputs
   // standing in a camera shows that camera's screen (mid-flight rouble / the list), so it can be set up
   $('shotCam1').onclick = () => { if (playing) stopShot(); shotFrame(17, shotCams[0]); };
   $('shotCam2').onclick = () => { if (playing) stopShot(); shotFrame(80, shotCams[1]); };
