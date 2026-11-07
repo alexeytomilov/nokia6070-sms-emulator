@@ -144,8 +144,22 @@ function stopShot() {
 }
 
 // ---------- capture to mp4 ----------
-const FRAME_W = 1920, FRAME_H = 1080, PAD = 50;     // the 16:9 frame and the overscan around it
-const OUT_W = FRAME_W + 2 * PAD, OUT_H = FRAME_H + 2 * PAD;
+let GL = null;
+// output: the frame (1920x1080 by default) and the overscan around it; a flat camera sets its own size
+const OUT_DEFAULT = { w: 1920, h: 1080, pad: 50 };
+let FRAME_W, FRAME_H, PAD, OUT_W, OUT_H;
+function setOut(o) {
+  const even = v => Math.max(16, Math.min(4096, Math.round(+v / 2) * 2 || 16));
+  const pad = Math.max(0, Math.min(500, Math.round(+o.pad || 0)));
+  FRAME_W = even(o.w); FRAME_H = even(o.h); PAD = pad;
+  OUT_W = FRAME_W + 2 * PAD; OUT_H = FRAME_H + 2 * PAD;
+  GL = null;                               // the WebGL canvas and shader are made for one size
+}
+// output size of the current camera: a flat camera carries its own, the others use the default
+const outFor = () => viaCam() && viaCam().flat ? { ...OUT_DEFAULT, pad: 0, ...(viaCam().out || {}) } : OUT_DEFAULT;
+// output pixels per CSS pixel of the 16:9 frame; another aspect covers the frame, centred
+const outScale = () => { const fr = $('frame').getBoundingClientRect(); return Math.max(FRAME_W / fr.width, FRAME_H / fr.height); };
+setOut(OUT_DEFAULT);
 
 // CSS gradients and the picture behind the phone, redrawn on a canvas
 function drawBackground(g, s) {
@@ -187,7 +201,8 @@ function drawVignette(g) {
 function phoneProjector() {
   const frame = $('frame'), ph = $('phone');
   // exact (fractional) sizes; the phone is centred in the frame by flexbox
-  const fr = frame.getBoundingClientRect(), fw = fr.width, fh = fr.height, s = FRAME_W / fw;
+  const fr = frame.getBoundingClientRect(), fw = fr.width, fh = fr.height, s = outScale();
+  const cx = PAD + FRAME_W / 2, cy = PAD + FRAME_H / 2;      // frame centre in the output
   const P = parseFloat(frame.style.perspective) || 1e9;
   const M = new DOMMatrix(getComputedStyle(ph).transform);
   const bw = parseFloat(view.style.width), bh = parseFloat(view.style.height), ox = (fw - bw) / 2, oy = (fh - bh) / 2;
@@ -195,13 +210,12 @@ function phoneProjector() {
     const p = M.transformPoint(new DOMPoint(u * bw - bw / 2, v * bh - bh / 2, 0, 1));
     const X = ox + bw / 2 + p.x / p.w, Y = oy + bh / 2 + p.y / p.w, Z = p.z / p.w;
     const w = (P - Z) / P;                 // perspective origin is the frame centre
-    return { x: PAD + s * (fw / 2 + (X - fw / 2) / w), y: PAD + s * (fh / 2 + (Y - fh / 2) / w), w,
+    return { x: cx + s * (X - fw / 2) / w, y: cy + s * (Y - fh / 2) / w, w,
              // homogeneous output position, for the GPU to clip and divide
-             hx: PAD * w + s * (fw / 2 * w + X - fw / 2), hy: PAD * w + s * (fh / 2 * w + Y - fh / 2) };
+             hx: cx * w + s * (X - fw / 2), hy: cy * w + s * (Y - fh / 2) };
   };
 }
 
-let GL = null;
 function glSetup() {
   const c = document.createElement('canvas'); c.width = OUT_W; c.height = OUT_H;
   const gl = c.getContext('webgl2', { premultipliedAlpha: true, alpha: true, preserveDrawingBuffer: true });
@@ -316,16 +330,17 @@ function captureScale(kUser) {
 
 async function captureShot() {
   if (playing) stopShot();
+  setOut(outFor());
   if (!('VideoEncoder' in window)) { alert('Этот браузер не умеет кодировать видео. Открой эмулятор в Chrome.'); return; }
   // software encoder first: the GPU encoder gave a black video on the author's machine
   // constant quality (quantizer 14, near-lossless) where the encoder allows it, else 40 Mbit/s
   const cfgs = ['prefer-software', 'no-preference'].flatMap(hw => ['quantizer', 'variable'].flatMap(mode =>
-    ['avc1.640033', 'avc1.640032', 'avc1.4d0033'].map(codec => ({
+    ['avc1.640033', 'avc1.640034', 'avc1.640032', 'avc1.4d0033'].map(codec => ({
       codec, width: OUT_W, height: OUT_H, bitrate: 40e6, framerate: SHOT.fps, avc: { format: 'avc' },
       hardwareAcceleration: hw, latencyMode: 'quality', bitrateMode: mode }))));
   let cfg = null;
   for (const c of cfgs) if ((await VideoEncoder.isConfigSupported(c)).supported) { cfg = c; break; }
-  if (!cfg) { alert('H.264 ' + OUT_W + 'x' + OUT_H + ' не поддерживается этим браузером.'); return; }
+  if (!cfg) { alert('H.264 ' + OUT_W + 'x' + OUT_H + ' не поддерживается этим браузером.'); setOut(OUT_DEFAULT); return; }
 
   const kept = keepState(), kUser = SHOT_K;
   const btn = $('shotCapture'); btn.disabled = true;
@@ -350,8 +365,7 @@ async function captureShot() {
       if (!(cam in kFor)) kFor[cam] = captureScale(kUser);
       CAPTURE = { k: kFor[cam], kUser };
       present();
-      const fr = $('frame').getBoundingClientRect(), s = FRAME_W / fr.width;
-      drawBackground(g, s);
+      drawBackground(g, outScale());
       drawPhone(g);
       drawVignette(g);
       const frame = new VideoFrame(out, { timestamp: Math.round(n * 1e6 / SHOT.fps), duration: Math.round(1e6 / SHOT.fps) });
@@ -373,7 +387,7 @@ async function captureShot() {
   } catch (e) {
     $('shotInfo').textContent = 'Ошибка рендера: ' + (e.message || e);
   } finally {
-    CAPTURE = null; NO_DEFOCUS = false; FLAT = false;
+    CAPTURE = null; NO_DEFOCUS = false; FLAT = false; setOut(OUT_DEFAULT);
     try { enc.close(); } catch (e) {}
     restoreState(kept);
     present();
@@ -401,6 +415,17 @@ function applyShotLook() {
     <label>Проигрывать через<select id="shotVia"></select></label>
     <div class="row"><button id="shotNew">+ Новая камера (текущий вид)</button><button id="shotFlat">+ Фронтальная плоская 90°</button></div>
     <div class="row" id="shotViaRow"><button id="shotViaGo">Встать в неё</button><button id="shotViaSet">Запомнить</button><button id="shotViaDel">Удалить</button></div>
+    <div id="shotOutBox">
+      <label>Вывод плоской камеры<select id="shotOutPreset">
+        <option value="1920,1080">1920×1080 (16:9)</option><option value="2560,1440">2560×1440 (16:9)</option>
+        <option value="3840,2160">3840×2160 (16:9)</option><option value="1280,720">1280×720 (16:9)</option>
+        <option value="800,640">800×640 (экран ×5)</option><option value="1600,1280">1600×1280 (экран ×10)</option>
+        <option value="">свой размер</option></select></label>
+      <div class="row"><label>Ширина<input type="number" id="shotOutW" min="16" max="4096" step="2"></label>
+        <label>Высота<input type="number" id="shotOutH" min="16" max="4096" step="2"></label>
+        <label>Поля, px<input type="number" id="shotOutPad" min="0" max="500" step="2"></label></div>
+      <div class="hint">Другая пропорция обрезает или расширяет кадр 16:9 от центра. 5:4 (экран ×5, ×10) кладёт экран почти впритык. Предел кодека около 4096×2304.</div>
+    </div>
     <div class="hint">Новая камера снимает весь шот одним планом. Плоская смотрит прямо в экран, телефон повёрнут на 90°, без расфокуса и хроматической аберрации.</div>
     <button id="shotLook">Вид как на скриншотах</button>
     <button class="main" id="shotPlay">▶ Проиграть шот</button>
@@ -428,6 +453,11 @@ function applyShotLook() {
     viaCam().cam = { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } }; saveShotExtra();
     $('shotInfo').textContent = viaCam().name + ' записана'; };
   $('shotViaDel').onclick = () => { if (!viaCam()) return; shotExtra.splice(shotVia, 1); shotVia = -1; saveShotExtra(); showShotVia(); };
+  const outEdit = () => { const c = viaCam(); if (!c || !c.flat) return;
+    c.out = { w: +$('shotOutW').value, h: +$('shotOutH').value, pad: +$('shotOutPad').value }; saveShotExtra(); showShotVia(); };
+  ['shotOutW', 'shotOutH', 'shotOutPad'].forEach(id => $(id).onchange = outEdit);
+  $('shotOutPreset').onchange = () => { const v = $('shotOutPreset').value; if (!v) return;
+    [$('shotOutW').value, $('shotOutH').value] = v.split(','); outEdit(); };
   showShotVia();
   $('shotPlay').onclick = playShot;
   $('shotCapture').onclick = captureShot;
@@ -440,6 +470,15 @@ function showShotVia() {
   }));
   sel.value = shotVia;
   $('shotViaRow').style.display = shotVia >= 0 ? '' : 'none';
+  const c = viaCam(), o = outFor();
+  $('shotOutBox').style.display = c && c.flat ? '' : 'none';
+  if (c && c.flat) {
+    $('shotOutW').value = o.w; $('shotOutH').value = o.h; $('shotOutPad').value = o.pad;
+    const p = o.w + ',' + o.h;
+    $('shotOutPreset').value = [...$('shotOutPreset').options].some(x => x.value === p) ? p : '';
+  }
+  const w = Math.round(o.w / 2) * 2 + 2 * o.pad, h = Math.round(o.h / 2) * 2 + 2 * o.pad;
+  $('shotCapture').textContent = `● Capture ${w}×${h}` + (o.pad ? ` (кадр ${o.w}×${o.h} + ${o.pad} px вокруг)` : '');
 }
 
 // Check mode for tuning: index.html#frame=N[&look] draws output frame N over the whole window
@@ -456,12 +495,13 @@ if (/^#frame=\d+/.test(location.hash)) {
     }
     const vm = location.hash.match(/via=(\d+)/);
     if (vm) { shotVia = +vm[1]; FLAT = !!(viaCam() && viaCam().flat); }
+    setOut(outFor());
     CAPTURE = null; shotFrame(n);
     CAPTURE = { k: captureScale(kUser), kUser }; present();
     const fr = $('frame').getBoundingClientRect(), out = document.createElement('canvas');
     out.width = OUT_W; out.height = OUT_H;
     const g = out.getContext('2d');
-    drawBackground(g, FRAME_W / fr.width); phoneMethod = /mesh/.test(location.hash) ? 'mesh' : null; drawPhone(g); drawVignette(g);
+    drawBackground(g, outScale()); phoneMethod = /mesh/.test(location.hash) ? 'mesh' : null; drawPhone(g); drawVignette(g);
     CAPTURE = null;
     out.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:9999';
     document.documentElement.append(out);
