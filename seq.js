@@ -78,11 +78,12 @@ function applyCam(c) {
 }
 
 // Puts the phone screen and the camera into the state of frame n.
-function shotFrame(n) {
+// cam: a camera to stand in instead of the one the shot uses on this frame
+function shotFrame(n, cam) {
   if ($('scale').value !== String(SHOT_K)) $('scale').value = String(SHOT_K);
   closeTennis();                           // the shot drives the game itself, frame by frame
   if (n < SHOT.cut) {
-    applyCam(camForFrame(n));
+    applyCam(cam || camForFrame(n));
     T.you.score = { pts: 0, games: 0, sets: 0 }; T.cpu.score = { pts: 0, games: 0, sets: 0 };
     // the game runs at 15 fps on the phone, so everything moves in 15 fps steps
     const steps = Math.floor((n - SHOT.ballFrom) * 15 / SHOT.fps), total = (SHOT.ballTo - SHOT.ballFrom) * 15 / SHOT.fps;
@@ -96,7 +97,7 @@ function shotFrame(n) {
     if (n < SHOT.popupAt) { S.mode = 'tennis'; T.paused = false; S.resume = null; }
     else { S.mode = 'incoming'; S.resume = 'tennis'; T.paused = true; S.unread = 1; S.reveal = 3; }
   } else {
-    applyCam(camForFrame(n));
+    applyCam(cam || camForFrame(n));
     S.mode = 'inbox'; S.resume = null;
     S.received = [0, 1].map(() => ({ from: '900', text: $('text').value, time: $('time').value, date: $('date').value, read: false }));
     S.sel = SHOT.listStart + SHOT.listSteps.filter(f => n >= f).length;
@@ -433,8 +434,8 @@ function applyShotLook() {
     <div class="hint" id="shotInfo"></div>`;
   $('side').insertBefore(box, $('side').children[2]);
   // standing in a camera shows that camera's screen (mid-flight rouble / the list), so it can be set up
-  $('shotCam1').onclick = () => { if (playing) stopShot(); shotFrame(17); };
-  $('shotCam2').onclick = () => { if (playing) stopShot(); shotFrame(80); };
+  $('shotCam1').onclick = () => { if (playing) stopShot(); shotFrame(17, shotCams[0]); };
+  $('shotCam2').onclick = () => { if (playing) stopShot(); shotFrame(80, shotCams[1]); };
   const setCam = i => { shotCams[i] = { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } }; saveShotCams();
     $('shotInfo').textContent = `Камера ${i + 1} шота записана`; };
   $('shotSet1').onclick = () => setCam(0);
