@@ -40,6 +40,37 @@ try { shotCams = JSON.parse(localStorage.getItem('nokia6070-shotcams-v2') || 'nu
 if (!Array.isArray(shotCams) || shotCams.length !== 2) shotCams = JSON.parse(JSON.stringify(SHOT_CAM_DEFAULTS));
 const saveShotCams = () => { try { localStorage.setItem('nokia6070-shotcams-v2', JSON.stringify(shotCams)); } catch (e) {} };
 
+// Extra cameras: the whole shot can be played and captured through one of them instead of
+// cameras 1 and 2. A flat camera looks straight at the screen, the phone turned 90 degrees to
+// fill the 16:9 frame, and renders without defocus and chromatic aberration (a clean screen texture).
+let shotExtra = [], shotVia = -1;          // shotVia: index in shotExtra, -1 = cameras 1 and 2
+try { shotExtra = JSON.parse(localStorage.getItem('nokia6070-shotcams-extra') || '[]'); } catch (e) {}
+if (!Array.isArray(shotExtra)) shotExtra = [];
+try { shotVia = +(localStorage.getItem('nokia6070-shotvia') ?? -1); } catch (e) {}
+if (!(shotVia < shotExtra.length)) shotVia = -1;
+const saveShotExtra = () => { try {
+  localStorage.setItem('nokia6070-shotcams-extra', JSON.stringify(shotExtra));
+  localStorage.setItem('nokia6070-shotvia', String(shotVia));
+} catch (e) {} };
+const viaCam = () => shotVia >= 0 ? shotExtra[shotVia] : null;
+const camForFrame = n => viaCam() ? viaCam().cam : shotCams[n < SHOT.cut ? 0 : 1];
+
+// front camera with the phone turned 90 degrees, the screen filling the frame height
+function flatCam() {
+  if ($('scale').value !== String(SHOT_K)) { $('scale').value = String(SHOT_K); }
+  present();
+  // everything in pixels of the 1280 px reference frame, so the camera fits any window size
+  const css = 1 / 1.25, k = LAYOUT.k, a = -90 * Math.PI / 180;
+  // screen centre relative to the phone centre, CSS px before the transform
+  const dx = (LAYOUT.sx + W * k / 2 - view.width / 2) * css, dy = (LAYOUT.sy + H * k / 2 - view.height / 2) * css;
+  // turned 90 degrees the screen is H wide and W tall
+  const fw = FRAME_REF, fh = FRAME_REF * 9 / 16, margin = 0.97;
+  const z = Math.min(fh * margin / (W * k * css), fw * margin / (H * k * css));
+  const rx = dx * Math.cos(a) - dy * Math.sin(a), ry = dx * Math.sin(a) + dy * Math.cos(a);
+  return { rotX: '0', rotY: '0', rotZ: '-90', persp: '3000', zoom: String(Math.max(-3, Math.min(3, Math.log2(z)))),
+           pan: { x: -rx * z, y: -ry * z } };
+}
+
 function applyCam(c) {
   ROT_IDS.forEach(id => { if (id in c) $(id).value = c[id]; });
   Object.assign(pan, c.pan || { x: 0, y: 0 });
@@ -51,7 +82,7 @@ function shotFrame(n) {
   if ($('scale').value !== String(SHOT_K)) $('scale').value = String(SHOT_K);
   closeTennis();                           // the shot drives the game itself, frame by frame
   if (n < SHOT.cut) {
-    applyCam(shotCams[0]);
+    applyCam(camForFrame(n));
     T.you.score = { pts: 0, games: 0, sets: 0 }; T.cpu.score = { pts: 0, games: 0, sets: 0 };
     // the game runs at 15 fps on the phone, so everything moves in 15 fps steps
     const steps = Math.floor((n - SHOT.ballFrom) * 15 / SHOT.fps), total = (SHOT.ballTo - SHOT.ballFrom) * 15 / SHOT.fps;
@@ -65,7 +96,7 @@ function shotFrame(n) {
     if (n < SHOT.popupAt) { S.mode = 'tennis'; T.paused = false; S.resume = null; }
     else { S.mode = 'incoming'; S.resume = 'tennis'; T.paused = true; S.unread = 1; S.reveal = 3; }
   } else {
-    applyCam(shotCams[1]);
+    applyCam(camForFrame(n));
     S.mode = 'inbox'; S.resume = null;
     S.received = [0, 1].map(() => ({ from: '900', text: $('text').value, time: $('time').value, date: $('date').value, read: false }));
     S.sel = SHOT.listStart + SHOT.listSteps.filter(f => n >= f).length;
@@ -100,13 +131,13 @@ function playShot() {
     playing.raf = requestAnimationFrame(step);
   };
   playing = { kept, n: -1 };
-  NO_DEFOCUS = true;
+  NO_DEFOCUS = true; FLAT = !!(viaCam() && viaCam().flat);
   step();
 }
 function stopShot() {
   if (!playing) return;
   cancelAnimationFrame(playing.raf);
-  NO_DEFOCUS = false;
+  NO_DEFOCUS = false; FLAT = false;
   restoreState(playing.kept);
   playing = null;
   $('shotPlay').textContent = '▶ Проиграть шот';
@@ -298,7 +329,8 @@ async function captureShot() {
 
   const kept = keepState(), kUser = SHOT_K;
   const btn = $('shotCapture'); btn.disabled = true;
-  NO_DEFOCUS = true;
+  NO_DEFOCUS = true; FLAT = !!(viaCam() && viaCam().flat);
+  const via = viaCam(), tag = via ? '_' + via.name.replace(/[^\wА-яЁё-]+/g, '') : '';
   const muxer = new Mp4Muxer.Muxer({
     target: new Mp4Muxer.ArrayBufferTarget(),
     video: { codec: 'avc', width: OUT_W, height: OUT_H, frameRate: SHOT.fps },
@@ -313,7 +345,7 @@ async function captureShot() {
   phoneMethod = null;
   try {
     for (let n = 0; n < SHOT.frames && !failed; n++) {
-      const cam = n < SHOT.cut ? 0 : 1;
+      const cam = via ? 'via' : n < SHOT.cut ? 0 : 1;
       CAPTURE = null; shotFrame(n);
       if (!(cam in kFor)) kFor[cam] = captureScale(kUser);
       CAPTURE = { k: kFor[cam], kUser };
@@ -334,14 +366,14 @@ async function captureShot() {
     muxer.finalize();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([muxer.target.buffer], { type: 'video/mp4' }));
-    a.download = `${SHOT.name}_${OUT_W}x${OUT_H}.mp4`;
+    a.download = `${SHOT.name}${tag}_${OUT_W}x${OUT_H}.mp4`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     $('shotInfo').textContent = `Готово: ${a.download}, ${SHOT.frames} кадров (телефон: ${phoneMethod === 'webgl' ? 'WebGL' : '2D'})`;
   } catch (e) {
     $('shotInfo').textContent = 'Ошибка рендера: ' + (e.message || e);
   } finally {
-    CAPTURE = null; NO_DEFOCUS = false;
+    CAPTURE = null; NO_DEFOCUS = false; FLAT = false;
     try { enc.close(); } catch (e) {}
     restoreState(kept);
     present();
@@ -366,6 +398,10 @@ function applyShotLook() {
     <div class="row"><button id="shotCam1">Встать в камеру 1</button><button id="shotCam2">Встать в камеру 2</button></div>
     <div class="row"><button id="shotSet1">Запомнить камеру 1</button><button id="shotSet2">Запомнить камеру 2</button></div>
     <div class="hint">«Встать» ставит камеру и кадр шота на экране. Подвинь телефон мышью или ползунками и нажми «Запомнить».</div>
+    <label>Проигрывать через<select id="shotVia"></select></label>
+    <div class="row"><button id="shotNew">+ Новая камера (текущий вид)</button><button id="shotFlat">+ Фронтальная плоская 90°</button></div>
+    <div class="row" id="shotViaRow"><button id="shotViaGo">Встать в неё</button><button id="shotViaSet">Запомнить</button><button id="shotViaDel">Удалить</button></div>
+    <div class="hint">Новая камера снимает весь шот одним планом. Плоская смотрит прямо в экран, телефон повёрнут на 90°, без расфокуса и хроматической аберрации.</div>
     <button id="shotLook">Вид как на скриншотах</button>
     <button class="main" id="shotPlay">▶ Проиграть шот</button>
     <button class="main" id="shotCapture">● Capture 2020×1180 (кадр 1920×1080 + 50 px вокруг)</button>
@@ -379,9 +415,32 @@ function applyShotLook() {
   $('shotSet1').onclick = () => setCam(0);
   $('shotSet2').onclick = () => setCam(1);
   $('shotLook').onclick = applyShotLook;
+  $('shotVia').onchange = () => { shotVia = +$('shotVia').value; saveShotExtra(); showShotVia(); };
+  const add = c => { shotExtra.push(c); shotVia = shotExtra.length - 1; saveShotExtra(); showShotVia(); };
+  $('shotNew').onclick = () => add({ name: 'Камера ' + (shotExtra.length + 3), cam: { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } } });
+  $('shotFlat').onclick = () => {
+    if (playing) stopShot();
+    add({ name: 'Плоская ' + (shotExtra.length + 3), flat: true, cam: flatCam() });
+    shotFrame(17);
+  };
+  $('shotViaGo').onclick = () => { if (playing) stopShot(); if (viaCam()) shotFrame(17); };
+  $('shotViaSet').onclick = () => { if (!viaCam()) return;
+    viaCam().cam = { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } }; saveShotExtra();
+    $('shotInfo').textContent = viaCam().name + ' записана'; };
+  $('shotViaDel').onclick = () => { if (!viaCam()) return; shotExtra.splice(shotVia, 1); shotVia = -1; saveShotExtra(); showShotVia(); };
+  showShotVia();
   $('shotPlay').onclick = playShot;
   $('shotCapture').onclick = captureShot;
 })();
+
+function showShotVia() {
+  const sel = $('shotVia');
+  sel.replaceChildren(...[{ name: 'Камеры 1 и 2 шота' }, ...shotExtra].map((c, i) => {
+    const o = document.createElement('option'); o.value = i - 1; o.textContent = c.name; return o;
+  }));
+  sel.value = shotVia;
+  $('shotViaRow').style.display = shotVia >= 0 ? '' : 'none';
+}
 
 // Check mode for tuning: index.html#frame=N[&look] draws output frame N over the whole window
 // (used to compare with the sketch in a headless Chrome screenshot).
@@ -395,6 +454,8 @@ if (/^#frame=\d+/.test(location.hash)) {
       const v = cm[1].split(',');
       shotCams[n < SHOT.cut ? 0 : 1] = { rotX: v[0], rotY: v[1], rotZ: v[2], persp: v[3], zoom: v[4], pan: { x: +v[5], y: +v[6] } };
     }
+    const vm = location.hash.match(/via=(\d+)/);
+    if (vm) { shotVia = +vm[1]; FLAT = !!(viaCam() && viaCam().flat); }
     CAPTURE = null; shotFrame(n);
     CAPTURE = { k: captureScale(kUser), kUser }; present();
     const fr = $('frame').getBoundingClientRect(), out = document.createElement('canvas');

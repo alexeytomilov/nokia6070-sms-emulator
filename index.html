@@ -619,8 +619,9 @@ function depthBlur(src, maxBlur, focus, dof, k, screenY) {
 }
 
 let LAYOUT = { k: 1, sx: 0, sy: 0 };
-let CAPTURE = null;
-let NO_DEFOCUS = false;                      // the shot plays and renders without defocus                         // { k, kUser } while seq.js renders the shot
+let CAPTURE = null;                         // { k, kUser } while seq.js renders the shot
+let NO_DEFOCUS = false;                      // the shot plays and renders without defocus
+let FLAT = false;                            // flat front camera: no defocus, no chromatic aberration
 const FRAME_REF = 1280;                     // camera numbers are in pixels of a 1280 px wide frame
 const frameScale = () => ($('frame').clientWidth || FRAME_REF) / FRAME_REF;
 
@@ -703,7 +704,7 @@ function present() {
   view.style.width = cw * css + 'px';
   view.style.height = ch * css + 'px';
 
-  const noise = fx('fxNoise'), grid = fx('fxGrid'), dirt = fx('fxDirt'), defocus = NO_DEFOCUS ? 0 : fx('fxDefocus');
+  const noise = fx('fxNoise'), grid = fx('fxGrid'), dirt = fx('fxDirt'), defocus = NO_DEFOCUS || FLAT ? 0 : fx('fxDefocus');
   bctx.clearRect(0, 0, w, h);
   bctx.imageSmoothingEnabled = false;
   bctx.drawImage(noise ? applyNoise(noise) : lcd, 0, 0, w, h);
@@ -730,7 +731,7 @@ function present() {
     compCtx.globalCompositeOperation = 'source-over';
   }
 
-  const ca = fx('fxCA');
+  const ca = FLAT ? 0 : fx('fxCA');
   const out = ca ? chromatic(comp, ca, sx + w / 2, sy + h / 2) : comp;
   vctx.imageSmoothingEnabled = false;
   if (defocus) depthBlur(out, defocus, fx('fxFocus'), fx('fxDof'), k, sy);
@@ -1064,6 +1065,7 @@ $('saveAll').onclick = () => {
     controls: Object.fromEntries(settingControls().map(el => [controlKey(el), el.type === 'checkbox' ? el.checked : el.value])),
     pan: { ...pan }, cams, bgImage: bgUrl,
     shotCams: typeof shotCams !== 'undefined' ? shotCams : undefined,
+    shotExtra: typeof shotExtra !== 'undefined' ? shotExtra : undefined,
   };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
@@ -1085,6 +1087,7 @@ function applySettings(data) {
   Object.assign(pan, data.pan || { x: 0, y: 0 });
   cams = data.cams || []; camOn = -1; saveCams(); showCams();
   if (Array.isArray(data.shotCams) && data.shotCams.length === 2 && typeof shotCams !== 'undefined') { shotCams = data.shotCams; saveShotCams(); }
+  if (Array.isArray(data.shotExtra) && typeof shotExtra !== 'undefined') { shotExtra = data.shotExtra; shotVia = -1; saveShotExtra(); showShotVia(); }
   place(); look(); draw();
 }
 $('loadFile').onchange = async () => {
