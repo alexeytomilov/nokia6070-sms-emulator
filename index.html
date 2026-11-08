@@ -6,7 +6,7 @@
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#202225;color:#ccc;font:13px system-ui,sans-serif;height:100vh;
-    display:grid;grid-template-columns:580px 1fr 300px;grid-template-rows:1fr auto;gap:16px;padding:16px}
+    display:grid;grid-template-columns:580px 1fr 250px 300px;grid-template-rows:1fr auto;gap:16px;padding:16px}
   .panel{display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
   #bodyPanel{grid-column:1;grid-row:1/3;display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0}
   #bodyPanel>.panel{min-height:0}
@@ -47,7 +47,8 @@
   #bottom input,#bottom select,#bottom textarea,#bottom button{padding:3px 6px}
   #bottom textarea{height:48px}
   #bottom .hint{font-size:11px;line-height:1.3}
-  #side{grid-column:3;grid-row:1/3;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+  #texPanel{grid-column:3;grid-row:1/3;align-self:start}
+  #side{grid-column:4;grid-row:1/3;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
   label{display:flex;flex-direction:column;gap:4px}
   input,textarea,select,button{font:inherit;background:#2c2f33;color:#eee;border:1px solid #444;border-radius:4px;padding:6px}
   textarea{height:62px;resize:vertical}
@@ -203,6 +204,8 @@ Mama | Ty poel?</textarea></label>
     <div class="hint">F1 левая, Enter центр, Esc / F2 правая, ↑↓ прокрутка, S прислать SMS. С главного экрана Enter открывает «Входящие». В теннисе ←→ двигают игрока, Enter пауза, Esc выход.</div>
   </div>
 </div>
+
+<div id="texPanel" class="panel"></div>
 
 <div id="side">
   <div class="row">

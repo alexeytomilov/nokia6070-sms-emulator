@@ -436,7 +436,8 @@ function applyShotLook() {
     <label>Крупность<span><input type="range" id="texZoom" min="0.5" max="4" step="0.01"><output></output></span></label>
     ${sizeBox('tex')}
     <button class="main" id="texRender">● Рендер</button>`;
-  $('side').append(box, tb);              // camera, overlay, then the shot and the texture render
+  $('side').append(box);                  // camera, then the shot
+  $('texPanel').append(tb);               // the texture render in its own column next to the frame
   // standing in a camera shows that camera's screen (mid-flight rouble / the list), so it can be set up
   $('shotCam1').onclick = () => { if (playing) stopShot(); shotFrame(17, shotCams[0]); };
   $('shotCam2').onclick = () => { if (playing) stopShot(); shotFrame(80, shotCams[1]); };
