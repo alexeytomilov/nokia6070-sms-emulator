@@ -654,6 +654,17 @@ function chromatic(src, amount, cx, cy) {
   caCtx.globalCompositeOperation = 'source-over';
   return caBuf;
 }
+// chromatic aberration only on the screen glass: the body around it stays as it is
+const [caGlass, caGlassCtx] = (() => { const c = document.createElement('canvas'); return [c, c.getContext('2d')]; })();
+function glassOnly(ca, src, x, y, w, h) {
+  caGlass.width = src.width; caGlass.height = src.height;
+  caGlassCtx.drawImage(src, 0, 0);
+  caGlassCtx.save();
+  caGlassCtx.beginPath(); caGlassCtx.rect(x, y, w, h); caGlassCtx.clip();
+  caGlassCtx.clearRect(x, y, w, h); caGlassCtx.drawImage(ca, 0, 0);
+  caGlassCtx.restore();
+  return caGlass;
+}
 
 // Depth of field: sharp band around the focus line, blur grows above and below it,
 // over the screen and the body alike. focus and dof are measured on the screen (0 = its top).
@@ -799,7 +810,8 @@ function present() {
   const flat = FLAT || (typeof texView !== 'undefined' && texView());   // flat screen: no camera effects
   const ca = flat ? 0 : fx('fxCA');
   $('frame').classList.toggle('flat', flat);   // no vignette on the flat screen
-  const out = ca ? chromatic(comp, ca, sx + w / 2, sy + h / 2) : comp;
+  const gm = 2 * k;                       // the glass: the LCD and a thin margin of dark glass around it
+  const out = ca ? glassOnly(chromatic(comp, ca, sx + w / 2, sy + h / 2), comp, sx - gm, sy - gm, w + 2 * gm, h + 2 * gm) : comp;
   vctx.imageSmoothingEnabled = false;
   if (defocus) depthBlur(out, defocus, fx('fxFocus'), fx('fxDof'), k, sy);
   else { vctx.clearRect(0, 0, cw, ch); vctx.drawImage(out, 0, 0); }
