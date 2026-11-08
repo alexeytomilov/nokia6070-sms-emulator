@@ -40,17 +40,24 @@ try { shotCams = JSON.parse(localStorage.getItem('nokia6070-shotcams-v2') || 'nu
 if (!Array.isArray(shotCams) || shotCams.length !== 2) shotCams = JSON.parse(JSON.stringify(SHOT_CAM_DEFAULTS));
 const saveShotCams = () => { try { localStorage.setItem('nokia6070-shotcams-v2', JSON.stringify(shotCams)); } catch (e) {} };
 
-// View of the shot: cameras 1 and 2 as timed, or the flat screen: straight at the screen, the phone
-// turned 90 degrees to fill the frame, no defocus and no chromatic aberration (a clean screen texture).
-// The flat camera is worked out from the screen layout, there is nothing to set up by hand.
-let shotFlat = { on: false, w: 1920, h: 1080, pad: 50 };   // view and capture size (pad: overscan, shot view only)
-try { Object.assign(shotFlat, JSON.parse(localStorage.getItem('nokia6070-shotflat') || '{}')); } catch (e) {}
-const saveShotFlat = () => { try { localStorage.setItem('nokia6070-shotflat', JSON.stringify(shotFlat)); } catch (e) {} };
-let flatCamNow = null;                     // worked out once per play / capture / preview
-const camForFrame = n => shotFlat.on ? (flatCamNow = flatCamNow || flatCam()) : shotCams[n < SHOT.cut ? 0 : 1];
+// Output sizes. The shot renders through cameras 1 and 2 with overscan around the frame; the texture
+// render plays the same shot flat: straight at the screen, the phone turned 90 degrees, no camera
+// effects (no perspective, defocus, chromatic aberration or vignette), at the closeness set in its block.
+let shotOut = { w: 1920, h: 1080, pad: 50 };
+let tex = { w: 1920, h: 1080, zoom: 1 };
+try { Object.assign(shotOut, JSON.parse(localStorage.getItem('nokia6070-shotout') || '{}')); } catch (e) {}
+try { Object.assign(tex, JSON.parse(localStorage.getItem('nokia6070-tex') || '{}')); } catch (e) {}
+const saveOut = () => { try {
+  localStorage.setItem('nokia6070-shotout', JSON.stringify(shotOut));
+  localStorage.setItem('nokia6070-tex', JSON.stringify(tex));
+} catch (e) {} };
+let texCam = null;                         // set while the texture render runs
+const camForFrame = n => texCam || shotCams[n < SHOT.cut ? 0 : 1];
+// the view is flat when the phone faces the camera turned 90 degrees (the texture block puts it there)
+const texView = () => +$('rotX').value === 0 && +$('rotY').value === 0 && +$('rotZ').value === -90;
 
 // front camera with the phone turned 90 degrees, the screen filling the frame height
-function flatCam() {
+function flatCam(closer = 1) {
   if ($('scale').value !== String(SHOT_K)) { $('scale').value = String(SHOT_K); }
   present();
   // everything in pixels of the 1280 px reference frame, so the camera fits any window size
@@ -59,7 +66,7 @@ function flatCam() {
   const dx = (LAYOUT.sx + W * k / 2 - view.width / 2) * css, dy = (LAYOUT.sy + H * k / 2 - view.height / 2) * css;
   // turned 90 degrees the screen is H wide and W tall
   const fw = FRAME_REF, fh = FRAME_REF * 9 / 16, margin = 0.97;
-  const z = Math.min(fh * margin / (W * k * css), fw * margin / (H * k * css));
+  const z = closer * Math.min(fh * margin / (W * k * css), fw * margin / (H * k * css));
   const rx = dx * Math.cos(a) - dy * Math.sin(a), ry = dx * Math.sin(a) + dy * Math.cos(a);
   return { rotX: '0', rotY: '0', rotZ: '-90', persp: '3000', zoom: String(Math.max(-3, Math.min(3, Math.log2(z)))),
            pan: { x: -rx * z, y: -ry * z } };
@@ -126,7 +133,7 @@ function playShot() {
     playing.raf = requestAnimationFrame(step);
   };
   playing = { kept, n: -1 };
-  NO_DEFOCUS = true; FLAT = shotFlat.on; flatCamNow = null;
+  NO_DEFOCUS = true;
   step();
 }
 function stopShot() {
@@ -151,7 +158,7 @@ function setOut(o) {
   GL = null;                               // the WebGL canvas and shader are made for one size
 }
 // output size of the current camera: a flat camera carries its own, the others use the default
-const outFor = () => ({ w: shotFlat.w, h: shotFlat.h, pad: shotFlat.on ? 0 : shotFlat.pad });
+const outFor = () => texCam ? { w: tex.w, h: tex.h, pad: 0 } : shotOut;
 // output pixels per CSS pixel of the 16:9 frame; another aspect covers the frame, centred
 const outScale = () => { const fr = $('frame').getBoundingClientRect(); return Math.max(FRAME_W / fr.width, FRAME_H / fr.height); };
 setOut(OUT_DEFAULT);
@@ -324,10 +331,12 @@ function captureScale(kUser) {
   return Math.max(kUser, Math.min(10, Math.ceil(kUser * wOut / view.width)));
 }
 
-async function captureShot() {
+// asTexture: the flat render, through the current flat view (or a fresh one at the block's closeness)
+async function captureShot(asTexture) {
   if (playing) stopShot();
+  texCam = asTexture ? (texView() ? { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } } : flatCam(tex.zoom)) : null;
   setOut(outFor());
-  if (!('VideoEncoder' in window)) { alert('Этот браузер не умеет кодировать видео. Открой эмулятор в Chrome.'); return; }
+  if (!('VideoEncoder' in window)) { texCam = null; alert('Этот браузер не умеет кодировать видео. Открой эмулятор в Chrome.'); return; }
   // software encoder first: the GPU encoder gave a black video on the author's machine
   // constant quality (quantizer 14, near-lossless) where the encoder allows it, else 40 Mbit/s
   const cfgs = ['prefer-software', 'no-preference'].flatMap(hw => ['quantizer', 'variable'].flatMap(mode =>
@@ -336,12 +345,12 @@ async function captureShot() {
       hardwareAcceleration: hw, latencyMode: 'quality', bitrateMode: mode }))));
   let cfg = null;
   for (const c of cfgs) if ((await VideoEncoder.isConfigSupported(c)).supported) { cfg = c; break; }
-  if (!cfg) { alert('H.264 ' + OUT_W + 'x' + OUT_H + ' не поддерживается этим браузером.'); setOut(OUT_DEFAULT); return; }
+  if (!cfg) { alert('H.264 ' + OUT_W + 'x' + OUT_H + ' не поддерживается этим браузером.'); texCam = null; setOut(OUT_DEFAULT); return; }
 
   const kept = keepState(), kUser = SHOT_K;
-  const btn = $('shotCapture'); btn.disabled = true;
-  NO_DEFOCUS = true; FLAT = shotFlat.on; flatCamNow = null;
-  const via = shotFlat.on, tag = via ? '_flat' : '';
+  const btn = $(asTexture ? 'texRender' : 'shotCapture'); btn.disabled = true;
+  NO_DEFOCUS = true; FLAT = !!asTexture;
+  const via = !!asTexture, tag = via ? '_texture' : '';
   const muxer = new Mp4Muxer.Muxer({
     target: new Mp4Muxer.ArrayBufferTarget(),
     video: { codec: 'avc', width: OUT_W, height: OUT_H, frameRate: SHOT.fps },
@@ -383,7 +392,7 @@ async function captureShot() {
   } catch (e) {
     $('shotInfo').textContent = 'Ошибка рендера: ' + (e.message || e);
   } finally {
-    CAPTURE = null; NO_DEFOCUS = false; FLAT = false; setOut(OUT_DEFAULT);
+    CAPTURE = null; NO_DEFOCUS = false; FLAT = false; texCam = null; setOut(OUT_DEFAULT);
     try { enc.close(); } catch (e) {}
     restoreState(kept);
     present();
@@ -401,27 +410,33 @@ function applyShotLook() {
 }
 
 (() => {
+  const sizeBox = p => `
+    <label>Размер<select id="${p}Preset">
+        <option value="1920,1080">1920×1080</option><option value="2560,1440">2560×1440</option>
+        <option value="3840,2160">3840×2160</option><option value="1280,720">1280×720</option>
+        <option value="800,640">800×640 (экран ×5)</option><option value="1600,1280">1600×1280 (экран ×10)</option>
+        <option value="">свой</option></select></label>
+    <div class="row" id="${p}Custom"><label>Ширина<input type="number" id="${p}W" min="16" max="4096" step="2"></label>
+      <label>Высота<input type="number" id="${p}H" min="16" max="4096" step="2"></label></div>`;
   const box = document.createElement('fieldset');
   box.innerHTML = `
     <legend>Шот 120</legend>
     <div class="hint">25 к/с, 106 кадров. Камера 1: рубль и «Сообщение получено» (кадры 0–63). Камера 2: список (64–105).</div>
     <div class="row"><button id="shotCam1">Встать в камеру 1</button><button id="shotSet1">Запомнить 1</button></div>
     <div class="row"><button id="shotCam2">Встать в камеру 2</button><button id="shotSet2">Запомнить 2</button></div>
-    <label>Вид<select id="shotView"><option value="cams">Как в шоте (камеры 1 и 2)</option><option value="flat">Плоский экран (текстура)</option></select></label>
-    <div id="shotOutBox">
-      <label>Размер<select id="shotOutPreset">
-        <option value="1920,1080">1920×1080</option><option value="2560,1440">2560×1440</option>
-        <option value="3840,2160">3840×2160</option><option value="1280,720">1280×720</option>
-        <option value="800,640">800×640 (экран ×5)</option><option value="1600,1280">1600×1280 (экран ×10)</option>
-        <option value="">свой</option></select></label>
-      <div class="row" id="shotOutCustom"><label>Ширина<input type="number" id="shotOutW" min="16" max="4096" step="2"></label>
-        <label>Высота<input type="number" id="shotOutH" min="16" max="4096" step="2"></label></div>
-      <label id="shotPadRow">Поля вокруг кадра, px<input type="number" id="shotOutPad" min="0" max="500" step="2"></label>
-    </div>
+    ${sizeBox('shot')}
+    <label>Поля вокруг кадра, px<input type="number" id="shotPad" min="0" max="500" step="2"></label>
     <button class="main" id="shotPlay">▶ Проиграть шот</button>
     <button class="main" id="shotCapture">● Capture</button>
     <div class="hint" id="shotInfo"></div>`;
-  $('side').append(box);                  // camera, overlay, then the shot and its outputs
+  const tb = document.createElement('fieldset');
+  tb.innerHTML = `
+    <legend>Рендер в текстуру</legend>
+    <button id="texGo">Плоский вид</button>
+    <label>Крупность<span><input type="range" id="texZoom" min="0.5" max="4" step="0.01"><output></output></span></label>
+    ${sizeBox('tex')}
+    <button class="main" id="texRender">● Рендер</button>`;
+  $('side').append(box, tb);              // camera, overlay, then the shot and the texture render
   // standing in a camera shows that camera's screen (mid-flight rouble / the list), so it can be set up
   $('shotCam1').onclick = () => { if (playing) stopShot(); shotFrame(17, shotCams[0]); };
   $('shotCam2').onclick = () => { if (playing) stopShot(); shotFrame(80, shotCams[1]); };
@@ -429,32 +444,37 @@ function applyShotLook() {
     $('shotInfo').textContent = `Камера ${i + 1} шота записана`; };
   $('shotSet1').onclick = () => setCam(0);
   $('shotSet2').onclick = () => setCam(1);
-  $('shotView').onchange = () => {
-    if (playing) stopShot();
-    shotFlat.on = $('shotView').value === 'flat'; saveShotFlat(); showShotView();
-    flatCamNow = null; FLAT = shotFlat.on; shotFrame(17); FLAT = false;   // show what the view looks like
-  };
-  $('shotOutPreset').onchange = () => { const v = $('shotOutPreset').value;
-    if (v) { [shotFlat.w, shotFlat.h] = v.split(',').map(Number); saveShotFlat(); }
-    showShotView(!v); };
-  $('shotOutPad').onchange = () => { shotFlat.pad = Math.max(0, +$('shotOutPad').value || 0); saveShotFlat(); showShotView(); };
-  ['shotOutW', 'shotOutH'].forEach(id => $(id).onchange = () => {
-    shotFlat.w = +$('shotOutW').value || 1920; shotFlat.h = +$('shotOutH').value || 1080; saveShotFlat(); showShotView(true); });
-  showShotView();
-  $('shotPlay').onclick = playShot;
-  $('shotCapture').onclick = captureShot;
+  // size controls: a preset, or "свой" with width and height
+  for (const [p, o] of [['shot', shotOut], ['tex', tex]]) {
+    $(p + 'Preset').onchange = () => { const v = $(p + 'Preset').value;
+      if (v) { [o.w, o.h] = v.split(',').map(Number); saveOut(); }
+      showOut(p, !v); };
+    [p + 'W', p + 'H'].forEach(id => $(id).onchange = () => {
+      o.w = +$(p + 'W').value || 1920; o.h = +$(p + 'H').value || 1080; saveOut(); showOut(p, true); });
+  }
+  $('shotPad').onchange = () => { shotOut.pad = Math.max(0, +$('shotPad').value || 0); saveOut(); showOut(); };
+  // the flat view: the shot's first camera screen, phone turned and filling the frame at the set closeness
+  const goFlat = () => { if (playing) stopShot(); shotFrame(17, flatCam(tex.zoom)); };
+  $('texGo').onclick = goFlat;
+  $('texZoom').oninput = () => { tex.zoom = +$('texZoom').value; saveOut(); showOut(); goFlat(); };
+  $('shotPlay').onclick = () => playShot();
+  $('shotCapture').onclick = () => captureShot(false);
+  $('texRender').onclick = () => captureShot(true);
+  showOut();
 })();
-
-function showShotView(custom) {
-  $('shotView').value = shotFlat.on ? 'flat' : 'cams';
-  $('shotPadRow').style.display = shotFlat.on ? 'none' : '';
-  $('shotOutPad').value = shotFlat.pad;
-  const p = shotFlat.w + ',' + shotFlat.h, known = [...$('shotOutPreset').options].some(x => x.value === p);
-  $('shotOutPreset').value = known && !custom ? p : '';
-  $('shotOutCustom').style.display = known && !custom ? 'none' : '';
-  $('shotOutW').value = shotFlat.w; $('shotOutH').value = shotFlat.h;
-  const o = outFor();
+function showOut(only, custom) {
+  for (const [p, o] of [['shot', shotOut], ['tex', tex]]) {
+    const c = p === only && custom;
+    const v = o.w + ',' + o.h, known = [...$(p + 'Preset').options].some(x => x.value === v);
+    $(p + 'Preset').value = known && !c ? v : '';
+    $(p + 'Custom').style.display = known && !c ? 'none' : '';
+    $(p + 'W').value = o.w; $(p + 'H').value = o.h;
+  }
+  $('shotPad').value = shotOut.pad;
+  $('texZoom').value = tex.zoom; $('texZoom').nextElementSibling.value = 'x' + (+tex.zoom).toFixed(2);
+  const o = shotOut;
   $('shotCapture').textContent = `● Capture ${o.w + 2 * o.pad}×${o.h + 2 * o.pad}` + (o.pad ? ` (кадр ${o.w}×${o.h} + ${o.pad} px вокруг)` : '');
+  $('texRender').textContent = `● Рендер ${tex.w}×${tex.h}`;
 }
 
 // Check mode for tuning: index.html#frame=N[&look] draws output frame N over the whole window
@@ -469,8 +489,8 @@ if (/^#frame=\d+/.test(location.hash)) {
       const v = cm[1].split(',');
       shotCams[n < SHOT.cut ? 0 : 1] = { rotX: v[0], rotY: v[1], rotZ: v[2], persp: v[3], zoom: v[4], pan: { x: +v[5], y: +v[6] } };
     }
-    if (/[&]flat/.test(location.hash)) shotFlat.on = true;
-    FLAT = shotFlat.on; flatCamNow = null;
+    if (/[&]flat/.test(location.hash)) texCam = flatCam(tex.zoom);
+    FLAT = !!texCam;
     setOut(outFor());
     CAPTURE = null; shotFrame(n);
     CAPTURE = { k: captureScale(kUser), kUser }; present();

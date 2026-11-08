@@ -211,8 +211,8 @@ Mama | Ty poel?</textarea></label>
   </div>
   <input type="file" id="loadFile" accept=".json,application/json" hidden>
   <fieldset>
-    <legend>Экран в кадре</legend>
-    <div class="row">
+    <legend>Камера</legend>
+    <div class="row" style="display:none">   <!-- the screen renders at x3; the view just fits the frame -->
       <label>Экран<input value="Nokia 6070 · 128×160" disabled></label>
       <label>Масштаб
         <select id="scale"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option><option>8</option></select>
@@ -223,7 +223,6 @@ Mama | Ty poel?</textarea></label>
     <label>Вращение в плоскости<span><input type="range" id="rotZ" min="-180" max="180" step="0.5" value="0"><output></output></span></label>
     <label>Перспектива (меньше = сильнее)<span><input type="range" id="persp" min="200" max="3000" step="10" value="900"><output></output></span></label>
     <label>Зум<span><input type="range" id="zoom" min="-3" max="3" step="0.01" value="-1.2"><output></output></span></label>
-    <div class="hint">В кадре: тянуть мышью — повернуть, колесо — зум к курсору, Shift + тянуть или средняя кнопка — сдвинуть.</div>
     <button id="rotReset">Сбросить положение</button>
     <button class="main" id="camAdd">+ Запомнить камеру</button>
     <div id="cams" class="cams"></div>
@@ -730,7 +729,7 @@ function present() {
   view.style.width = cw * css + 'px';
   view.style.height = ch * css + 'px';
 
-  const noise = fx('fxNoise'), grid = fx('fxGrid'), dirt = fx('fxDirt'), defocus = NO_DEFOCUS || FLAT ? 0 : fx('fxDefocus');
+  const noise = fx('fxNoise'), grid = fx('fxGrid'), dirt = fx('fxDirt'), defocus = NO_DEFOCUS || FLAT || (typeof texView !== 'undefined' && texView()) ? 0 : fx('fxDefocus');
   bctx.clearRect(0, 0, w, h);
   bctx.imageSmoothingEnabled = false;
   bctx.drawImage(noise ? applyNoise(noise) : lcd, 0, 0, w, h);
@@ -757,8 +756,9 @@ function present() {
     compCtx.globalCompositeOperation = 'source-over';
   }
 
-  const ca = FLAT ? 0 : fx('fxCA');
-  $('frame').classList.toggle('flat', FLAT);   // no vignette on the flat screen
+  const flat = FLAT || (typeof texView !== 'undefined' && texView());   // flat screen: no camera effects
+  const ca = flat ? 0 : fx('fxCA');
+  $('frame').classList.toggle('flat', flat);   // no vignette on the flat screen
   const out = ca ? chromatic(comp, ca, sx + w / 2, sy + h / 2) : comp;
   vctx.imageSmoothingEnabled = false;
   if (defocus) depthBlur(out, defocus, fx('fxFocus'), fx('fxDof'), k, sy);
@@ -1099,7 +1099,8 @@ $('saveAll').onclick = () => {
     controls: Object.fromEntries(settingControls().map(el => [controlKey(el), el.type === 'checkbox' ? el.checked : el.value])),
     pan: { ...pan }, cams, bgImage: bgUrl,
     shotCams: typeof shotCams !== 'undefined' ? shotCams : undefined,
-    shotFlat: typeof shotFlat !== 'undefined' ? shotFlat : undefined,
+    shotOut: typeof shotOut !== 'undefined' ? shotOut : undefined,
+    tex: typeof tex !== 'undefined' ? tex : undefined,
   };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
@@ -1121,7 +1122,8 @@ function applySettings(data) {
   Object.assign(pan, data.pan || { x: 0, y: 0 });
   cams = data.cams || []; camOn = -1; saveCams(); showCams();
   if (Array.isArray(data.shotCams) && data.shotCams.length === 2 && typeof shotCams !== 'undefined') { shotCams = data.shotCams; saveShotCams(); }
-  if (data.shotFlat && typeof shotFlat !== 'undefined') { Object.assign(shotFlat, data.shotFlat); saveShotFlat(); showShotView(); }
+  if (data.shotOut && typeof shotOut !== 'undefined') { Object.assign(shotOut, data.shotOut); Object.assign(tex, data.tex || {}); saveOut(); showOut(); }
+  $('scale').value = '3'; present();
   place(); look(); draw();
 }
 $('loadFile').onchange = async () => {
