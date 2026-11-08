@@ -40,20 +40,14 @@ try { shotCams = JSON.parse(localStorage.getItem('nokia6070-shotcams-v2') || 'nu
 if (!Array.isArray(shotCams) || shotCams.length !== 2) shotCams = JSON.parse(JSON.stringify(SHOT_CAM_DEFAULTS));
 const saveShotCams = () => { try { localStorage.setItem('nokia6070-shotcams-v2', JSON.stringify(shotCams)); } catch (e) {} };
 
-// Extra cameras: the whole shot can be played and captured through one of them instead of
-// cameras 1 and 2. A flat camera looks straight at the screen, the phone turned 90 degrees to
-// fill the 16:9 frame, and renders without defocus and chromatic aberration (a clean screen texture).
-let shotExtra = [], shotVia = -1;          // shotVia: index in shotExtra, -1 = cameras 1 and 2
-try { shotExtra = JSON.parse(localStorage.getItem('nokia6070-shotcams-extra') || '[]'); } catch (e) {}
-if (!Array.isArray(shotExtra)) shotExtra = [];
-try { shotVia = +(localStorage.getItem('nokia6070-shotvia') ?? -1); } catch (e) {}
-if (!(shotVia < shotExtra.length)) shotVia = -1;
-const saveShotExtra = () => { try {
-  localStorage.setItem('nokia6070-shotcams-extra', JSON.stringify(shotExtra));
-  localStorage.setItem('nokia6070-shotvia', String(shotVia));
-} catch (e) {} };
-const viaCam = () => shotVia >= 0 ? shotExtra[shotVia] : null;
-const camForFrame = n => viaCam() ? viaCam().cam : shotCams[n < SHOT.cut ? 0 : 1];
+// View of the shot: cameras 1 and 2 as timed, or the flat screen: straight at the screen, the phone
+// turned 90 degrees to fill the frame, no defocus and no chromatic aberration (a clean screen texture).
+// The flat camera is worked out from the screen layout, there is nothing to set up by hand.
+let shotFlat = { on: false, w: 1920, h: 1080 };
+try { Object.assign(shotFlat, JSON.parse(localStorage.getItem('nokia6070-shotflat') || '{}')); } catch (e) {}
+const saveShotFlat = () => { try { localStorage.setItem('nokia6070-shotflat', JSON.stringify(shotFlat)); } catch (e) {} };
+let flatCamNow = null;                     // worked out once per play / capture / preview
+const camForFrame = n => shotFlat.on ? (flatCamNow = flatCamNow || flatCam()) : shotCams[n < SHOT.cut ? 0 : 1];
 
 // front camera with the phone turned 90 degrees, the screen filling the frame height
 function flatCam() {
@@ -132,7 +126,7 @@ function playShot() {
     playing.raf = requestAnimationFrame(step);
   };
   playing = { kept, n: -1 };
-  NO_DEFOCUS = true; FLAT = !!(viaCam() && viaCam().flat);
+  NO_DEFOCUS = true; FLAT = shotFlat.on; flatCamNow = null;
   step();
 }
 function stopShot() {
@@ -157,7 +151,7 @@ function setOut(o) {
   GL = null;                               // the WebGL canvas and shader are made for one size
 }
 // output size of the current camera: a flat camera carries its own, the others use the default
-const outFor = () => viaCam() && viaCam().flat ? { ...OUT_DEFAULT, pad: 0, ...(viaCam().out || {}) } : OUT_DEFAULT;
+const outFor = () => shotFlat.on ? { w: shotFlat.w, h: shotFlat.h, pad: 0 } : OUT_DEFAULT;
 // output pixels per CSS pixel of the 16:9 frame; another aspect covers the frame, centred
 const outScale = () => { const fr = $('frame').getBoundingClientRect(); return Math.max(FRAME_W / fr.width, FRAME_H / fr.height); };
 setOut(OUT_DEFAULT);
@@ -187,6 +181,7 @@ function drawBackground(g, s) {
   g.restore();
 }
 function drawVignette(g) {
+  if (FLAT) return;                        // flat screen: no camera effects
   const rx = FRAME_W / 2 * Math.SQRT2, ry = FRAME_H / 2 * Math.SQRT2;
   g.save(); g.globalAlpha = +$('vignette').value;
   g.translate(OUT_W / 2, OUT_H / 2); g.scale(rx, ry);
@@ -345,8 +340,8 @@ async function captureShot() {
 
   const kept = keepState(), kUser = SHOT_K;
   const btn = $('shotCapture'); btn.disabled = true;
-  NO_DEFOCUS = true; FLAT = !!(viaCam() && viaCam().flat);
-  const via = viaCam(), tag = via ? '_' + via.name.replace(/[^\wА-яЁё-]+/g, '') : '';
+  NO_DEFOCUS = true; FLAT = shotFlat.on; flatCamNow = null;
+  const via = shotFlat.on, tag = via ? '_flat' : '';
   const muxer = new Mp4Muxer.Muxer({
     target: new Mp4Muxer.ArrayBufferTarget(),
     video: { codec: 'avc', width: OUT_W, height: OUT_H, frameRate: SHOT.fps },
@@ -408,29 +403,22 @@ function applyShotLook() {
 (() => {
   const box = document.createElement('fieldset');
   box.innerHTML = `
-    <legend>Шот 120 (по скетчу, 25 к/с, 106 кадров, без расфокуса)</legend>
-    <div class="hint">Кадры 0–34 летит рубль, 35–63 «Сообщение получено» (камера 1), 64–105 листается список (камера 2).</div>
-    <div class="row"><button id="shotCam1">Встать в камеру 1</button><button id="shotCam2">Встать в камеру 2</button></div>
-    <div class="row"><button id="shotSet1">Запомнить камеру 1</button><button id="shotSet2">Запомнить камеру 2</button></div>
-    <div class="hint">«Встать» ставит камеру и кадр шота на экране. Подвинь телефон мышью или ползунками и нажми «Запомнить».</div>
-    <label>Проигрывать через<select id="shotVia"></select></label>
-    <div class="row"><button id="shotNew">+ Новая камера (текущий вид)</button><button id="shotFlat">+ Фронтальная плоская 90°</button></div>
-    <div class="row" id="shotViaRow"><button id="shotViaGo">Встать в неё</button><button id="shotViaSet">Запомнить</button><button id="shotViaDel">Удалить</button></div>
+    <legend>Шот 120</legend>
+    <div class="hint">25 к/с, 106 кадров. Камера 1: рубль и «Сообщение получено» (кадры 0–63). Камера 2: список (64–105).</div>
+    <div class="row"><button id="shotCam1">Встать в камеру 1</button><button id="shotSet1">Запомнить 1</button></div>
+    <div class="row"><button id="shotCam2">Встать в камеру 2</button><button id="shotSet2">Запомнить 2</button></div>
+    <label>Вид<select id="shotView"><option value="cams">Как в шоте (камеры 1 и 2)</option><option value="flat">Плоский экран (текстура)</option></select></label>
     <div id="shotOutBox">
-      <label>Вывод плоской камеры<select id="shotOutPreset">
-        <option value="1920,1080">1920×1080 (16:9)</option><option value="2560,1440">2560×1440 (16:9)</option>
-        <option value="3840,2160">3840×2160 (16:9)</option><option value="1280,720">1280×720 (16:9)</option>
+      <label>Размер<select id="shotOutPreset">
+        <option value="1920,1080">1920×1080</option><option value="2560,1440">2560×1440</option>
+        <option value="3840,2160">3840×2160</option><option value="1280,720">1280×720</option>
         <option value="800,640">800×640 (экран ×5)</option><option value="1600,1280">1600×1280 (экран ×10)</option>
-        <option value="">свой размер</option></select></label>
-      <div class="row"><label>Ширина<input type="number" id="shotOutW" min="16" max="4096" step="2"></label>
-        <label>Высота<input type="number" id="shotOutH" min="16" max="4096" step="2"></label>
-        <label>Поля, px<input type="number" id="shotOutPad" min="0" max="500" step="2"></label></div>
-      <div class="hint">Другая пропорция обрезает или расширяет кадр 16:9 от центра. 5:4 (экран ×5, ×10) кладёт экран почти впритык. Предел кодека около 4096×2304.</div>
+        <option value="">свой</option></select></label>
+      <div class="row" id="shotOutCustom"><label>Ширина<input type="number" id="shotOutW" min="16" max="4096" step="2"></label>
+        <label>Высота<input type="number" id="shotOutH" min="16" max="4096" step="2"></label></div>
     </div>
-    <div class="hint">Новая камера снимает весь шот одним планом. Плоская смотрит прямо в экран, телефон повёрнут на 90°, без расфокуса и хроматической аберрации.</div>
-    <button id="shotLook">Вид как на скриншотах</button>
     <button class="main" id="shotPlay">▶ Проиграть шот</button>
-    <button class="main" id="shotCapture">● Capture 2020×1180 (кадр 1920×1080 + 50 px вокруг)</button>
+    <button class="main" id="shotCapture">● Capture</button>
     <div class="hint" id="shotInfo"></div>`;
   $('side').append(box);                  // camera, overlay, then the shot and its outputs
   // standing in a camera shows that camera's screen (mid-flight rouble / the list), so it can be set up
@@ -440,46 +428,30 @@ function applyShotLook() {
     $('shotInfo').textContent = `Камера ${i + 1} шота записана`; };
   $('shotSet1').onclick = () => setCam(0);
   $('shotSet2').onclick = () => setCam(1);
-  $('shotLook').onclick = applyShotLook;
-  $('shotVia').onchange = () => { shotVia = +$('shotVia').value; saveShotExtra(); showShotVia(); };
-  const add = c => { shotExtra.push(c); shotVia = shotExtra.length - 1; saveShotExtra(); showShotVia(); };
-  $('shotNew').onclick = () => add({ name: 'Камера ' + (shotExtra.length + 3), cam: { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } } });
-  $('shotFlat').onclick = () => {
+  $('shotView').onchange = () => {
     if (playing) stopShot();
-    add({ name: 'Плоская ' + (shotExtra.length + 3), flat: true, cam: flatCam() });
-    shotFrame(17);
+    shotFlat.on = $('shotView').value === 'flat'; saveShotFlat(); showShotView();
+    flatCamNow = null; FLAT = shotFlat.on; shotFrame(17); FLAT = false;   // show what the view looks like
   };
-  $('shotViaGo').onclick = () => { if (playing) stopShot(); if (viaCam()) shotFrame(17); };
-  $('shotViaSet').onclick = () => { if (!viaCam()) return;
-    viaCam().cam = { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } }; saveShotExtra();
-    $('shotInfo').textContent = viaCam().name + ' записана'; };
-  $('shotViaDel').onclick = () => { if (!viaCam()) return; shotExtra.splice(shotVia, 1); shotVia = -1; saveShotExtra(); showShotVia(); };
-  const outEdit = () => { const c = viaCam(); if (!c || !c.flat) return;
-    c.out = { w: +$('shotOutW').value, h: +$('shotOutH').value, pad: +$('shotOutPad').value }; saveShotExtra(); showShotVia(); };
-  ['shotOutW', 'shotOutH', 'shotOutPad'].forEach(id => $(id).onchange = outEdit);
-  $('shotOutPreset').onchange = () => { const v = $('shotOutPreset').value; if (!v) return;
-    [$('shotOutW').value, $('shotOutH').value] = v.split(','); outEdit(); };
-  showShotVia();
+  $('shotOutPreset').onchange = () => { const v = $('shotOutPreset').value;
+    if (v) { [shotFlat.w, shotFlat.h] = v.split(',').map(Number); saveShotFlat(); }
+    showShotView(!v); };
+  ['shotOutW', 'shotOutH'].forEach(id => $(id).onchange = () => {
+    shotFlat.w = +$('shotOutW').value || 1920; shotFlat.h = +$('shotOutH').value || 1080; saveShotFlat(); showShotView(true); });
+  showShotView();
   $('shotPlay').onclick = playShot;
   $('shotCapture').onclick = captureShot;
 })();
 
-function showShotVia() {
-  const sel = $('shotVia');
-  sel.replaceChildren(...[{ name: 'Камеры 1 и 2 шота' }, ...shotExtra].map((c, i) => {
-    const o = document.createElement('option'); o.value = i - 1; o.textContent = c.name; return o;
-  }));
-  sel.value = shotVia;
-  $('shotViaRow').style.display = shotVia >= 0 ? '' : 'none';
-  const c = viaCam(), o = outFor();
-  $('shotOutBox').style.display = c && c.flat ? '' : 'none';
-  if (c && c.flat) {
-    $('shotOutW').value = o.w; $('shotOutH').value = o.h; $('shotOutPad').value = o.pad;
-    const p = o.w + ',' + o.h;
-    $('shotOutPreset').value = [...$('shotOutPreset').options].some(x => x.value === p) ? p : '';
-  }
-  const w = Math.round(o.w / 2) * 2 + 2 * o.pad, h = Math.round(o.h / 2) * 2 + 2 * o.pad;
-  $('shotCapture').textContent = `● Capture ${w}×${h}` + (o.pad ? ` (кадр ${o.w}×${o.h} + ${o.pad} px вокруг)` : '');
+function showShotView(custom) {
+  $('shotView').value = shotFlat.on ? 'flat' : 'cams';
+  $('shotOutBox').style.display = shotFlat.on ? '' : 'none';
+  const p = shotFlat.w + ',' + shotFlat.h, known = [...$('shotOutPreset').options].some(x => x.value === p);
+  $('shotOutPreset').value = known && !custom ? p : '';
+  $('shotOutCustom').style.display = known && !custom ? 'none' : '';
+  $('shotOutW').value = shotFlat.w; $('shotOutH').value = shotFlat.h;
+  const o = outFor();
+  $('shotCapture').textContent = `● Capture ${o.w + 2 * o.pad}×${o.h + 2 * o.pad}` + (o.pad ? ` (кадр ${o.w}×${o.h} + ${o.pad} px вокруг)` : '');
 }
 
 // Check mode for tuning: index.html#frame=N[&look] draws output frame N over the whole window
@@ -494,8 +466,8 @@ if (/^#frame=\d+/.test(location.hash)) {
       const v = cm[1].split(',');
       shotCams[n < SHOT.cut ? 0 : 1] = { rotX: v[0], rotY: v[1], rotZ: v[2], persp: v[3], zoom: v[4], pan: { x: +v[5], y: +v[6] } };
     }
-    const vm = location.hash.match(/via=(\d+)/);
-    if (vm) { shotVia = +vm[1]; FLAT = !!(viaCam() && viaCam().flat); }
+    if (/[&]flat/.test(location.hash)) shotFlat.on = true;
+    FLAT = shotFlat.on; flatCamNow = null;
     setOut(outFor());
     CAPTURE = null; shotFrame(n);
     CAPTURE = { k: captureScale(kUser), kUser }; present();

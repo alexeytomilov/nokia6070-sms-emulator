@@ -33,6 +33,7 @@
   #frame.drag{cursor:grabbing}
   #frame{background:radial-gradient(ellipse 60% 70% at 25% 35%, var(--bg1), transparent 70%),
     radial-gradient(ellipse 70% 80% at 80% 70%, var(--bg2), transparent 75%), var(--bg3)}
+  #frame.flat::after{display:none}
   #frame::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:var(--vignette);
     background:radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.85))}
   #bgImg{position:absolute;inset:-12%;background:center/cover no-repeat;pointer-events:none}
@@ -757,6 +758,7 @@ function present() {
   }
 
   const ca = FLAT ? 0 : fx('fxCA');
+  $('frame').classList.toggle('flat', FLAT);   // no vignette on the flat screen
   const out = ca ? chromatic(comp, ca, sx + w / 2, sy + h / 2) : comp;
   vctx.imageSmoothingEnabled = false;
   if (defocus) depthBlur(out, defocus, fx('fxFocus'), fx('fxDof'), k, sy);
@@ -1097,7 +1099,7 @@ $('saveAll').onclick = () => {
     controls: Object.fromEntries(settingControls().map(el => [controlKey(el), el.type === 'checkbox' ? el.checked : el.value])),
     pan: { ...pan }, cams, bgImage: bgUrl,
     shotCams: typeof shotCams !== 'undefined' ? shotCams : undefined,
-    shotExtra: typeof shotExtra !== 'undefined' ? shotExtra : undefined,
+    shotFlat: typeof shotFlat !== 'undefined' ? shotFlat : undefined,
   };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
@@ -1119,7 +1121,7 @@ function applySettings(data) {
   Object.assign(pan, data.pan || { x: 0, y: 0 });
   cams = data.cams || []; camOn = -1; saveCams(); showCams();
   if (Array.isArray(data.shotCams) && data.shotCams.length === 2 && typeof shotCams !== 'undefined') { shotCams = data.shotCams; saveShotCams(); }
-  if (Array.isArray(data.shotExtra) && typeof shotExtra !== 'undefined') { shotExtra = data.shotExtra; shotVia = -1; saveShotExtra(); showShotVia(); }
+  if (data.shotFlat && typeof shotFlat !== 'undefined') { Object.assign(shotFlat, data.shotFlat); saveShotFlat(); showShotView(); }
   place(); look(); draw();
 }
 $('loadFile').onchange = async () => {
