@@ -6,9 +6,25 @@
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#202225;color:#ccc;font:13px system-ui,sans-serif;height:100vh;
-    display:grid;grid-template-columns:260px 1fr 300px;grid-template-rows:1fr auto;gap:16px;padding:16px}
+    display:grid;grid-template-columns:580px 1fr 300px;grid-template-rows:1fr auto;gap:16px;padding:16px}
   .panel{display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
-  #bodyPanel{grid-column:1;grid-row:1/3}
+  #bodyPanel{grid-column:1;grid-row:1/3;display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0}
+  #bodyPanel>.panel{min-height:0}
+  /* left columns are compact: label and slider on one line, so everything fits without scrolling */
+  fieldset{min-width:0}
+  #bodyPanel>.panel{overflow-x:hidden;gap:4px;scrollbar-width:thin}
+  #bodyPanel fieldset{gap:2px;padding:4px 8px 6px}
+  #bodyPanel label{display:grid;grid-template-columns:118px minmax(0,1fr);align-items:center;gap:6px;font-size:11.5px;line-height:1.15}
+  #bodyPanel label:has(input[type=checkbox]){display:flex}
+  #bodyPanel label:has(input[type=color]){display:flex;justify-content:space-between}
+  #bodyPanel select,#bodyPanel input[type=file]{width:100%;min-width:0}
+  #bodyPanel label>span{flex:1;min-width:0;gap:4px}
+  #bodyPanel fieldset output{width:30px;font-size:11px}
+  #bodyPanel button,#bodyPanel select{padding:3px 6px}
+  #bodyPanel .hint{font-size:11px;line-height:1.35}
+  #bodyPanel input[type=color]{width:30px;height:18px;padding:1px;margin-left:auto;flex:none}
+  #bodyPanel input[type=range]{height:16px;min-width:0;width:100%}
+  #bodyPanel .row{gap:8px}
   #center{grid-column:2;grid-row:1;min-height:0;display:flex;align-items:center;justify-content:center}
   #frame{aspect-ratio:16/9;width:min(100%, calc((100vh - 290px) * 16 / 9));background:#000;overflow:hidden;
     display:flex;align-items:center;justify-content:center;perspective:900px;cursor:grab;position:relative}
@@ -48,7 +64,8 @@
 </style>
 </head>
 <body>
-<div id="bodyPanel" class="panel">
+<div id="bodyPanel">
+<div class="panel">
   <fieldset>
     <legend>Корпус телефона</legend>
     <label style="flex-direction:row;align-items:center"><input type="checkbox" id="showBody" checked> Показывать корпус</label>
@@ -62,8 +79,7 @@
   </fieldset>
   <fieldset>
     <legend>Фон</legend>
-    <label>Картинка фона (HDRI, фото)<input type="file" id="bgFile" accept="image/*"></label>
-    <button id="bgClear">Убрать картинку</button>
+    <div class="row" title="Картинка фона: HDRI или фото"><input type="file" id="bgFile" accept="image/*" style="flex:2"><button id="bgClear">Убрать</button></div>
     <label>Размытие<span><input type="range" id="bgBlur" min="0" max="80" step="0.5" value="24"><output></output></span></label>
     <label>Яркость<span><input type="range" id="bgBright" min="0" max="2" step="0.01" value="1"><output></output></span></label>
     <label>Масштаб<span><input type="range" id="bgScale" min="1" max="4" step="0.01" value="1"><output></output></span></label>
@@ -90,6 +106,21 @@
     <div class="hint">Без картинки фона отражается градиент из цветов фона.</div>
     <button id="reflReset">Сбросить отражение</button>
   </fieldset>
+</div>
+<div class="panel">
+  <fieldset id="fx">
+    <legend>Оверлей экрана</legend>
+    <label>Толщина сетки<span><input type="range" id="fxGrid" min="0" max="0.6" step="0.01" value="0"><output></output></span></label>
+    <label>Плотность сетки<span><input type="range" id="fxGridAlpha" min="0" max="1" step="0.01" value="0.6"><output></output></span></label>
+    <label>Размытие сетки<span><input type="range" id="fxGridBlur" min="0" max="1" step="0.01" value="0"><output></output></span></label>
+    <label>Шум яркости пикселей<span><input type="range" id="fxNoise" min="0" max="0.4" step="0.01" value="0"><output></output></span></label>
+    <label>Грязь на стекле<span><input type="range" id="fxDirt" min="0" max="1" step="0.01" value="0"><output></output></span></label>
+    <label>Хроматическая аберрация<span><input type="range" id="fxCA" min="0" max="3" step="0.05" value="0"><output></output></span></label>
+    <label>Расфокус<span><input type="range" id="fxDefocus" min="0" max="6" step="0.05" value="0"><output></output></span></label>
+    <label>Точка фокуса (верх → низ)<span><input type="range" id="fxFocus" min="0" max="1" step="0.01" value="0.5"><output></output></span></label>
+    <label>Зона резкости<span><input type="range" id="fxDof" min="0" max="1" step="0.01" value="0.2"><output></output></span></label>
+    <button id="fxReset">Сбросить оверлей</button>
+  </fieldset>
   <fieldset id="colors">
     <legend>Цвета</legend>
     <div class="hint">Бирюзовая тема экрана:</div>
@@ -105,6 +136,7 @@
     <div class="hint">Кликни по экрану телефона, и нужный цвет выделится здесь. Наведи на цвет, и его место на экране мигнёт.</div>
     <button id="colorsReset">Сбросить цвета</button>
   </fieldset>
+</div>
 </div>
 
 <div id="center"><div id="frame"><div id="bgImg"></div><div id="phone"><canvas id="view"></canvas><i class="corner" style="left:0;top:0"></i><i class="corner" style="right:0;top:0"></i><i class="corner" style="right:0;bottom:0"></i><i class="corner" style="left:0;bottom:0"></i></div></div></div>
@@ -185,19 +217,6 @@ Mama | Ty poel?</textarea></label>
     <button id="rotReset">Сбросить положение</button>
     <button class="main" id="camAdd">+ Запомнить камеру</button>
     <div id="cams" class="cams"></div>
-  </fieldset>
-  <fieldset id="fx">
-    <legend>Оверлей экрана</legend>
-    <label>Толщина сетки<span><input type="range" id="fxGrid" min="0" max="0.6" step="0.01" value="0"><output></output></span></label>
-    <label>Плотность сетки<span><input type="range" id="fxGridAlpha" min="0" max="1" step="0.01" value="0.6"><output></output></span></label>
-    <label>Размытие сетки<span><input type="range" id="fxGridBlur" min="0" max="1" step="0.01" value="0"><output></output></span></label>
-    <label>Шум яркости пикселей<span><input type="range" id="fxNoise" min="0" max="0.4" step="0.01" value="0"><output></output></span></label>
-    <label>Грязь на стекле<span><input type="range" id="fxDirt" min="0" max="1" step="0.01" value="0"><output></output></span></label>
-    <label>Хроматическая аберрация<span><input type="range" id="fxCA" min="0" max="3" step="0.05" value="0"><output></output></span></label>
-    <label>Расфокус<span><input type="range" id="fxDefocus" min="0" max="6" step="0.05" value="0"><output></output></span></label>
-    <label>Точка фокуса (верх → низ)<span><input type="range" id="fxFocus" min="0" max="1" step="0.01" value="0.5"><output></output></span></label>
-    <label>Зона резкости<span><input type="range" id="fxDof" min="0" max="1" step="0.01" value="0.2"><output></output></span></label>
-    <button id="fxReset">Сбросить оверлей</button>
   </fieldset>
 </div>
 
