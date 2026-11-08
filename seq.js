@@ -43,7 +43,7 @@ const saveShotCams = () => { try { localStorage.setItem('nokia6070-shotcams-v2',
 // View of the shot: cameras 1 and 2 as timed, or the flat screen: straight at the screen, the phone
 // turned 90 degrees to fill the frame, no defocus and no chromatic aberration (a clean screen texture).
 // The flat camera is worked out from the screen layout, there is nothing to set up by hand.
-let shotFlat = { on: false, w: 1920, h: 1080 };
+let shotFlat = { on: false, w: 1920, h: 1080, pad: 50 };   // view and capture size (pad: overscan, shot view only)
 try { Object.assign(shotFlat, JSON.parse(localStorage.getItem('nokia6070-shotflat') || '{}')); } catch (e) {}
 const saveShotFlat = () => { try { localStorage.setItem('nokia6070-shotflat', JSON.stringify(shotFlat)); } catch (e) {} };
 let flatCamNow = null;                     // worked out once per play / capture / preview
@@ -151,7 +151,7 @@ function setOut(o) {
   GL = null;                               // the WebGL canvas and shader are made for one size
 }
 // output size of the current camera: a flat camera carries its own, the others use the default
-const outFor = () => shotFlat.on ? { w: shotFlat.w, h: shotFlat.h, pad: 0 } : OUT_DEFAULT;
+const outFor = () => ({ w: shotFlat.w, h: shotFlat.h, pad: shotFlat.on ? 0 : shotFlat.pad });
 // output pixels per CSS pixel of the 16:9 frame; another aspect covers the frame, centred
 const outScale = () => { const fr = $('frame').getBoundingClientRect(); return Math.max(FRAME_W / fr.width, FRAME_H / fr.height); };
 setOut(OUT_DEFAULT);
@@ -416,6 +416,7 @@ function applyShotLook() {
         <option value="">свой</option></select></label>
       <div class="row" id="shotOutCustom"><label>Ширина<input type="number" id="shotOutW" min="16" max="4096" step="2"></label>
         <label>Высота<input type="number" id="shotOutH" min="16" max="4096" step="2"></label></div>
+      <label id="shotPadRow">Поля вокруг кадра, px<input type="number" id="shotOutPad" min="0" max="500" step="2"></label>
     </div>
     <button class="main" id="shotPlay">▶ Проиграть шот</button>
     <button class="main" id="shotCapture">● Capture</button>
@@ -436,6 +437,7 @@ function applyShotLook() {
   $('shotOutPreset').onchange = () => { const v = $('shotOutPreset').value;
     if (v) { [shotFlat.w, shotFlat.h] = v.split(',').map(Number); saveShotFlat(); }
     showShotView(!v); };
+  $('shotOutPad').onchange = () => { shotFlat.pad = Math.max(0, +$('shotOutPad').value || 0); saveShotFlat(); showShotView(); };
   ['shotOutW', 'shotOutH'].forEach(id => $(id).onchange = () => {
     shotFlat.w = +$('shotOutW').value || 1920; shotFlat.h = +$('shotOutH').value || 1080; saveShotFlat(); showShotView(true); });
   showShotView();
@@ -445,7 +447,8 @@ function applyShotLook() {
 
 function showShotView(custom) {
   $('shotView').value = shotFlat.on ? 'flat' : 'cams';
-  $('shotOutBox').style.display = shotFlat.on ? '' : 'none';
+  $('shotPadRow').style.display = shotFlat.on ? 'none' : '';
+  $('shotOutPad').value = shotFlat.pad;
   const p = shotFlat.w + ',' + shotFlat.h, known = [...$('shotOutPreset').options].some(x => x.value === p);
   $('shotOutPreset').value = known && !custom ? p : '';
   $('shotOutCustom').style.display = known && !custom ? 'none' : '';
