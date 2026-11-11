@@ -8,7 +8,7 @@
 // The shot uses the current screen settings, but always without defocus.
 // Uses globals from index.html / tennis.js.
 
-const SHOT = {
+const SHOT_120 = {
   name: 'SBER185_shot120',
   fps: 25, frames: 106,
   ballFrom: 0, ballTo: 34,                 // rouble in flight
@@ -17,6 +17,18 @@ const SHOT = {
   listSteps: [69, 75, 80, 85, 91, 96, 103],  // highlight moves down one line on these frames
   listStart: 5,                            // highlight starts on the 6th line (Oleg)
 };
+
+// Shot "SMS": the received message opened on the read screen; after a short empty screen its lines
+// load from the top, one per phone tick (15 fps), then it holds. One camera of its own (camera 3).
+const SHOT_SMS = { name: 'SBER185_sms', fps: 25, frames: 75, loadAt: 6 };
+const SMS_TEXT_DEFAULT = 'Mobile bank: Popolnenie scheta karty *3452 na summu 15 000.00 RUB. Balans: 23 450.00 RUB.';
+let scenario = 's120', smsText = SMS_TEXT_DEFAULT;
+try { scenario = localStorage.getItem('nokia6070-scenario') || 's120'; } catch (e) {}
+try { smsText = localStorage.getItem('nokia6070-smstext') ?? SMS_TEXT_DEFAULT; } catch (e) {}
+let SHOT = scenario === 'sms' ? SHOT_SMS : SHOT_120;
+const saveScenario = () => { try {
+  localStorage.setItem('nokia6070-scenario', scenario); localStorage.setItem('nokia6070-smstext', smsText);
+} catch (e) {} };
 
 // camera presets for the shot: rotation, perspective, zoom, offset (same fields as the camera buttons)
 // fitted to the user's stills: court corners (camera 1) and list lines and names (camera 2);
@@ -37,7 +49,8 @@ const SHOT_LOOK = {
 
 let shotCams;
 try { shotCams = JSON.parse(localStorage.getItem('nokia6070-shotcams-v2') || 'null'); } catch (e) {}
-if (!Array.isArray(shotCams) || shotCams.length !== 2) shotCams = JSON.parse(JSON.stringify(SHOT_CAM_DEFAULTS));
+if (!Array.isArray(shotCams) || shotCams.length < 2) shotCams = JSON.parse(JSON.stringify(SHOT_CAM_DEFAULTS));
+if (!shotCams[2]) shotCams[2] = JSON.parse(JSON.stringify(shotCams[1]));   // camera 3: the SMS shot, starts as camera 2
 const saveShotCams = () => { try { localStorage.setItem('nokia6070-shotcams-v2', JSON.stringify(shotCams)); } catch (e) {} };
 
 // Output sizes. The shot renders through cameras 1 and 2 with overscan around the frame; the texture
@@ -52,7 +65,7 @@ const saveOut = () => { try {
   localStorage.setItem('nokia6070-tex', JSON.stringify(tex));
 } catch (e) {} };
 let texCam = null;                         // set while the texture render runs
-const camForFrame = n => texCam || shotCams[n < SHOT.cut ? 0 : 1];
+const camForFrame = n => texCam || (SHOT === SHOT_SMS ? shotCams[2] : shotCams[n < SHOT.cut ? 0 : 1]);
 // the view is flat when the phone faces the camera turned 90 degrees (the texture block puts it there)
 const texView = () => +$('rotX').value === 0 && +$('rotY').value === 0 && +$('rotZ').value === -90;
 
@@ -83,6 +96,14 @@ function applyCam(c) {
 function shotFrame(n, cam) {
   if ($('scale').value !== String(SHOT_K)) $('scale').value = String(SHOT_K);
   closeTennis();                           // the shot drives the game itself, frame by frame
+  if (SHOT === SHOT_SMS) {
+    applyCam(cam || camForFrame(n));
+    S.mode = 'read'; S.resume = null; S.from = null; S.scroll = 0;
+    S.msg = { from: $('from').value, text: smsText, time: $('time').value, date: $('date').value, read: true };
+    S.readLines = n < SHOT.loadAt ? 0 : Math.floor((n - SHOT.loadAt) * 15 / SHOT.fps) + 1;
+    draw();
+    return;
+  }
   if (n < SHOT.cut) {
     applyCam(cam || camForFrame(n));
     T.you.score = { pts: 0, games: 0, sets: 0 }; T.cpu.score = { pts: 0, games: 0, sets: 0 };
@@ -365,7 +386,7 @@ async function captureShot(asTexture) {
   phoneMethod = null;
   try {
     for (let n = 0; n < SHOT.frames && !failed; n++) {
-      const cam = via ? 'via' : n < SHOT.cut ? 0 : 1;
+      const cam = via ? 'via' : SHOT === SHOT_SMS ? 2 : n < SHOT.cut ? 0 : 1;
       CAPTURE = null; shotFrame(n);
       if (!(cam in kFor)) kFor[cam] = captureScale(kUser);
       CAPTURE = { k: kFor[cam], kUser };
@@ -420,10 +441,18 @@ function applyShotLook() {
       <label>Высота<input type="number" id="${p}H" min="16" max="4096" step="2"></label></div>`;
   const box = document.createElement('fieldset');
   box.innerHTML = `
-    <legend>Шот 120</legend>
-    <div class="hint">25 к/с, 106 кадров. Камера 1: рубль и «Сообщение получено» (кадры 0–63). Камера 2: список (64–105).</div>
-    <div class="row"><button id="shotCam1">Встать в камеру 1</button><button id="shotSet1">Запомнить 1</button></div>
-    <div class="row"><button id="shotCam2">Встать в камеру 2</button><button id="shotSet2">Запомнить 2</button></div>
+    <legend>Шот</legend>
+    <label>Сценарий<select id="scenario"><option value="s120">Шот 120: рубль, «Сообщение получено», список</option><option value="sms">SMS: полученная смс</option></select></label>
+    <div id="s120Box">
+      <div class="hint">25 к/с, 106 кадров. Камера 1: рубль и «Сообщение получено» (кадры 0–63). Камера 2: список (64–105).</div>
+      <div class="row"><button id="shotCam1">Встать в камеру 1</button><button id="shotSet1">Запомнить 1</button></div>
+      <div class="row"><button id="shotCam2">Встать в камеру 2</button><button id="shotSet2">Запомнить 2</button></div>
+    </div>
+    <div id="smsBox">
+      <div class="hint">25 к/с, 75 кадров. Открытая смс: строки загружаются сверху с 6-го кадра.</div>
+      <label>Текст смс<textarea id="smsText"></textarea></label>
+      <div class="row"><button id="shotCam3">Встать в камеру</button><button id="shotSet3">Запомнить</button></div>
+    </div>
     ${sizeBox('shot')}
     <label>Поля вокруг кадра, px<input type="number" id="shotPad" min="0" max="500" step="2"></label>
     <button class="main" id="shotPlay">▶ Проиграть шот</button>
@@ -442,9 +471,15 @@ function applyShotLook() {
   $('shotCam1').onclick = () => { if (playing) stopShot(); shotFrame(17, shotCams[0]); };
   $('shotCam2').onclick = () => { if (playing) stopShot(); shotFrame(80, shotCams[1]); };
   const setCam = i => { shotCams[i] = { ...Object.fromEntries(ROT_IDS.map(id => [id, $(id).value])), pan: { ...pan } }; saveShotCams();
-    $('shotInfo').textContent = `Камера ${i + 1} шота записана`; };
+    $('shotInfo').textContent = i === 2 ? 'Камера смс записана' : `Камера ${i + 1} шота записана`; };
   $('shotSet1').onclick = () => setCam(0);
   $('shotSet2').onclick = () => setCam(1);
+  $('shotCam3').onclick = () => { if (playing) stopShot(); shotFrame(SHOT_SMS.frames - 1, shotCams[2]); };
+  $('shotSet3').onclick = () => setCam(2);
+  $('smsText').value = smsText;
+  $('smsText').oninput = () => { smsText = $('smsText').value; saveScenario(); if (S.mode === 'read' && SHOT === SHOT_SMS && !playing) shotFrame(SHOT_SMS.frames - 1); };
+  $('scenario').onchange = () => { if (playing) stopShot(); scenario = $('scenario').value; saveScenario(); showScenario(); };
+  showScenario();
   // size controls: a preset, or "свой" with width and height
   for (const [p, o] of [['shot', shotOut], ['tex', tex]]) {
     $(p + 'Preset').onchange = () => { const v = $(p + 'Preset').value;
@@ -463,6 +498,13 @@ function applyShotLook() {
   $('texRender').onclick = () => captureShot(true);
   showOut();
 })();
+function showScenario() {
+  SHOT = scenario === 'sms' ? SHOT_SMS : SHOT_120;
+  $('scenario').value = scenario;
+  $('s120Box').style.display = scenario === 'sms' ? 'none' : '';
+  $('smsBox').style.display = scenario === 'sms' ? '' : 'none';
+  $('smsText').value = smsText;
+}
 function showOut(only, custom) {
   for (const [p, o] of [['shot', shotOut], ['tex', tex]]) {
     const c = p === only && custom;
@@ -488,7 +530,7 @@ if (/^#frame=\d+/.test(location.hash)) {
     const cm = location.hash.match(/cam=([-\d.,]+)/);       // rotX,rotY,rotZ,persp,zoom,panX,panY
     if (cm) {
       const v = cm[1].split(',');
-      shotCams[n < SHOT.cut ? 0 : 1] = { rotX: v[0], rotY: v[1], rotZ: v[2], persp: v[3], zoom: v[4], pan: { x: +v[5], y: +v[6] } };
+      shotCams[SHOT === SHOT_SMS ? 2 : n < SHOT.cut ? 0 : 1] = { rotX: v[0], rotY: v[1], rotZ: v[2], persp: v[3], zoom: v[4], pan: { x: +v[5], y: +v[6] } };
     }
     if (/[&]flat/.test(location.hash)) texCam = flatCam(tex.zoom);
     FLAT = !!texCam;
